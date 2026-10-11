@@ -268,6 +268,13 @@ public partial class App : WpfApplication
             }
         });
 
+        // MODEL DOWNLOAD LEFTOVERS
+        // A kill, crash or power loss mid-download left that model's partial
+        // file or folder in Models for good; remove it now (#1599).
+        // A download awaits ModelDownloadLeftovers.WhenSwept, so it never races the
+        // sweep. StartSweep runs off the UI thread and logs every exception.
+        _ = ModelDownloadLeftovers.StartSweep(DateTime.UtcNow);
+
         // LOCAL API SERVER
         // Off by default. When the user has enabled it via Settings → Local API,
         // bring up the loopback HTTP host so MCP/cURL scripts can talk to the
@@ -429,6 +436,12 @@ public partial class App : WpfApplication
         // the port frees up cleanly. The shared orchestrator + local provider
         // owned by TranscriptionRuntime are disposed implicitly by process exit.
         try { LocalApiServer.Instance.Shutdown(); } catch { /* best-effort on shutdown */ }
+
+        // Quit paths that skip MainWindow.ShutdownAsync (an update restart, a
+        // session end) still cancel running model downloads so each deletes its
+        // partial if it gets the chance; start-up sweeps the rest (#1599). No wait:
+        // a download's progress handler can need this UI thread.
+        _ = ModelDownloadService.Instance.CancelAllAsync(TimeSpan.Zero);
 
         // Release single-instance mutex
         SingleInstanceGuard.Release();
