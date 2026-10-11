@@ -1656,15 +1656,13 @@ class PersistenceController: ObservableObject {
                 transcript.setValue(Date(), forKey: "lastRetryDate")
             }
             transcript.setValue(transcribedText, forKey: "transcribedText")
-            if let postProcessedText {
-                transcript.setValue(postProcessedText, forKey: "postProcessedText")
-            }
+            // Always overwrite (including clearing to nil) — see the @MainActor variant.
+            transcript.setValue(postProcessedText, forKey: "postProcessedText")
             if let transcriptionProvider {
                 transcript.setValue(transcriptionProvider, forKey: "transcriptionProvider")
             }
-            if let postProcessingProvider {
-                transcript.setValue(postProcessingProvider, forKey: "postProcessingProvider")
-            }
+            // Always overwrite, in step with `postProcessedText` — see the @MainActor variant.
+            transcript.setValue(postProcessingProvider, forKey: "postProcessingProvider")
             // Always overwrite (including clearing to nil) — see the @MainActor variant.
             transcript.setValue(wordTimestampsJSON, forKey: "wordTimestampsJSON")
 
@@ -1877,7 +1875,9 @@ class PersistenceController: ObservableObject {
     /// - Parameters:
     ///   - transcript: The transcript to update (currently in "processing" state)
     ///   - transcribedText: The transcribed text (or error message if transcription failed)
-    ///   - postProcessedText: Optional AI-enhanced version of the text
+    ///   - postProcessedText: The delivered text when it differs from the raw text (AI
+    ///     post-processing, or with it off, filler removal, voice commands and
+    ///     Vocabulary swaps); nil clears the field. See `TranscriptionResult.historyPostProcessedText`.
     ///
     /// Auto-refresh mechanism:
     /// 1. Updates the transcript's text and status from "processing" to "completed"
@@ -1898,20 +1898,24 @@ class PersistenceController: ObservableObject {
         // Store the raw transcribed text
         transcript.setValue(transcribedText, forKey: "transcribedText")
 
-        // Store the post-processed text if available
-        if let postProcessedText = postProcessedText {
-            transcript.setValue(postProcessedText, forKey: "postProcessedText")
-        }
+        // Store the delivered text. Always overwrite, including clearing to
+        // nil: History, the Recording dialog and `GET /recordings/{id}` all
+        // read `postProcessedText` before `text`, so a Retry whose new text
+        // equals its raw text would otherwise keep showing the old run's
+        // text (issue #1638).
+        transcript.setValue(postProcessedText, forKey: "postProcessedText")
 
         // Store the transcription provider (e.g., "LibWhisper", "HyperWhisper Cloud", "OpenAI Whisper")
         if let provider = transcriptionProvider {
             transcript.setValue(provider, forKey: "transcriptionProvider")
         }
 
-        // Store the post-processing provider if available
-        if let provider = postProcessingProvider {
-            transcript.setValue(provider, forKey: "postProcessingProvider")
-        }
+        // Store the post-processing provider. Always overwrite, including
+        // clearing to nil, in step with `postProcessedText`: a Retry with AI
+        // off (or an AI step that left the text unchanged) has no provider,
+        // and keeping the old run's one would badge non-AI text as AI in
+        // History and in `GET /recordings/{id}`.
+        transcript.setValue(postProcessingProvider, forKey: "postProcessingProvider")
 
         // Store segment/word timestamps JSON blob (basis: raw_text). Always
         // overwrite — including clearing to nil when the caller supplies none.
