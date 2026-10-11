@@ -643,9 +643,7 @@ public partial class MainWindow : Window
             // Subscribe to audio device and mode changes to refresh the menus
             _viewModel.PropertyChanged += (s, e) =>
             {
-                if (e.PropertyName == nameof(MainViewModel.IsRecording) ||
-                    e.PropertyName == nameof(MainViewModel.IsTranscribing) ||
-                    e.PropertyName == nameof(MainViewModel.IsModelLoading) ||
+                if ((e.PropertyName is { } changed && MainViewModel.TrayFileTranscriptionInputs.Contains(changed)) ||
                     e.PropertyName == nameof(MainViewModel.SelectedAudioDevice) ||
                     e.PropertyName == nameof(MainViewModel.SelectedMode))
                 {
@@ -985,7 +983,7 @@ public partial class MainWindow : Window
             var modeItem = new System.Windows.Forms.ToolStripMenuItem(MenuItemText.Bound(modeName))
             {
                 ToolTipText = MenuItemText.Tooltip(modeName),
-                Enabled = !_viewModel.IsRecording && !_viewModel.IsTranscribing && !_viewModel.IsModelLoading && !IsOnboardingOpen,
+                Enabled = _viewModel.CanOfferTrayFileTranscription && !IsOnboardingOpen,
                 Tag = mode
             };
 

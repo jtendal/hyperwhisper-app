@@ -510,21 +510,98 @@ internal static class Program
                     "a malformed translation threw or dropped the file name");
 
                 // Every shipped catalog carries the key and the {0} placeholder.
-                var catalogs = Directory.GetDirectories(AppContext.BaseDirectory)
-                    .Select(Path.GetFileName)
-                    .Where(name => File.Exists(Path.Combine(AppContext.BaseDirectory, name!, "HyperWhisper.resources.dll")))
-                    .ToList();
-                Assert(catalogs.Count >= 39, $"expected 39 satellite catalogs, found {catalogs.Count}");
+                var catalogs = ShippedSatelliteCultures();
                 var neutral = HyperWhisper.Resources.Strings.ResourceManager.GetString(
                     ApplicationControlDiagnostics.BlockedNoticeKey, CultureInfo.InvariantCulture);
                 foreach (var name in catalogs)
                 {
                     var text = HyperWhisper.Resources.Strings.ResourceManager.GetString(
-                        ApplicationControlDiagnostics.BlockedNoticeKey, new CultureInfo(name!));
+                        ApplicationControlDiagnostics.BlockedNoticeKey, new CultureInfo(name));
                     Assert(text != null && text.Contains("{0}", StringComparison.Ordinal),
                         $"Strings.{name}.resx has no {{0}} in {ApplicationControlDiagnostics.BlockedNoticeKey}");
                     Assert(text != neutral, $"Strings.{name}.resx carries the English notice");
                 }
+            });
+
+            // #1535. A tray file pick that finds a dictation already running gets
+            // a toast instead of only a WARN line; every catalog must carry it.
+            Run("Every catalog translates the busy file-pick toast (#1535)", () =>
+            {
+                const string busyKey = "errors.fileTranscriptionBusy";
+                var neutral = HyperWhisper.Resources.Strings.ResourceManager.GetString(
+                    busyKey, CultureInfo.InvariantCulture);
+                Assert(!string.IsNullOrWhiteSpace(neutral), $"{busyKey} is missing from Strings.resx");
+                var catalogs = ShippedSatelliteCultures();
+                foreach (var name in catalogs)
+                {
+                    var text = HyperWhisper.Resources.Strings.ResourceManager.GetString(busyKey, new CultureInfo(name));
+                    Assert(!string.IsNullOrWhiteSpace(text) && text != neutral,
+                        $"Strings.{name}.resx does not translate {busyKey}");
+                }
+            });
+
+            // #1535. The Transcribe File dialog has no owner, so the tray stays live
+            // while it is open. Drive the real TranscribeFileWithModeAsync on a bare
+            // view model, with the dialog seam standing in for the dialog: the tray
+            // items go off while it is open, a second request opens no second dialog,
+            // and a pick that finds a dictation running gets the busy toast.
+            Run("Tray Transcribe File is off while its dialog is open, and a second request opens none (#1535)", () =>
+            {
+                var vm = (MainViewModel)System.Runtime.CompilerServices.RuntimeHelpers
+                    .GetUninitializedObject(typeof(MainViewModel));
+                var mode = new Mode { Name = "Smoke" };
+                Assert(vm.CanOfferTrayFileTranscription, "an idle view model disables Transcribe File");
+                Assert(MainViewModel.TrayFileTranscriptionInputs.Contains(nameof(MainViewModel.IsFileDialogOpen)),
+                    "the tray does not rebuild its Transcribe File items when the dialog opens or closes");
+
+                var dialogStates = new List<bool>();
+                vm.PropertyChanged += (_, e) =>
+                {
+                    if (e.PropertyName == nameof(MainViewModel.IsFileDialogOpen))
+                    {
+                        dialogStates.Add(vm.IsFileDialogOpen);
+                    }
+                };
+
+                var shown = 0;
+                var offeredWhileOpen = true;
+                var secondCompleted = false;
+                vm.ShowFileDialogOverride = _ =>
+                {
+                    // A guard that lets the second request through would re-enter
+                    // here; stop it rather than recurse.
+                    if (++shown > 1)
+                    {
+                        return false;
+                    }
+
+                    offeredWhileOpen = vm.CanOfferTrayFileTranscription;
+                    // The tray click that would have opened a second dialog.
+                    secondCompleted = vm.TranscribeFileWithModeAsync(mode).IsCompletedSuccessfully;
+                    return false;
+                };
+                vm.TranscribeFileWithModeAsync(mode).GetAwaiter().GetResult();
+
+                Assert(shown == 1, $"a request made while the dialog was open showed a dialog too ({shown} shown)");
+                Assert(secondCompleted, "the request made while the dialog was open did not return at once");
+                Assert(!offeredWhileOpen, "the tray offers Transcribe File while its dialog is open");
+                Assert(!vm.IsFileDialogOpen && vm.CanOfferTrayFileTranscription,
+                    "Transcribe File stays off after the dialog closed");
+                Assert(dialogStates.SequenceEqual(new[] { true, false }),
+                    $"IsFileDialogOpen raised [{string.Join(", ", dialogStates)}], expected [True, False]");
+
+                string? toast = null;
+                vm.ShowErrorToastRequested += (_, e) => toast = e.Message;
+                vm.ShowFileDialogOverride = _ =>
+                {
+                    // A dictation started from its shortcut while the dialog was open.
+                    vm.IsRecording = true;
+                    return true;
+                };
+                vm.TranscribeFileWithModeAsync(mode).GetAwaiter().GetResult();
+                Assert(toast == HyperWhisper.Localization.Loc.S("errors.fileTranscriptionBusy"),
+                    $"a pick that found a dictation running toasted '{toast ?? "nothing"}'");
+                Assert(!vm.CanOfferTrayFileTranscription, "the tray offers Transcribe File during a dictation");
             });
 
             // #960. A field typed from HyperWhisper.AppClassification puts that
@@ -18825,14 +18902,10 @@ internal static class Program
                 var neutral = HyperWhisper.Resources.Strings.ResourceManager.GetString(key, CultureInfo.InvariantCulture);
                 Assert(neutral != null && neutral.Contains("Retry With...", StringComparison.Ordinal),
                     $"the English refusal does not name the \"Retry With...\" menu item: '{neutral}'");
-                var catalogs = Directory.GetDirectories(AppContext.BaseDirectory)
-                    .Select(Path.GetFileName)
-                    .Where(name => File.Exists(Path.Combine(AppContext.BaseDirectory, name!, "HyperWhisper.resources.dll")))
-                    .ToList();
-                Assert(catalogs.Count >= 39, $"expected 39 satellite catalogs, found {catalogs.Count}");
+                var catalogs = ShippedSatelliteCultures();
                 foreach (var name in catalogs)
                 {
-                    var culture = new CultureInfo(name!);
+                    var culture = new CultureInfo(name);
                     var text = HyperWhisper.Resources.Strings.ResourceManager.GetString(key, culture);
                     Assert(!string.IsNullOrWhiteSpace(text) && text != neutral,
                         $"Strings.{name}.resx has no translated {key}");
@@ -22701,6 +22774,18 @@ internal static class Program
             .OrderBy(name => name, StringComparer.Ordinal));
 
         return cultures;
+    }
+
+    /// <summary>
+    /// The translated catalogues only - <see cref="ShippedUiCultures"/> without the
+    /// English base - asserting the one floor every "each catalog translates X"
+    /// case shares, so a run that found no satellites cannot pass vacuously.
+    /// </summary>
+    private static List<string> ShippedSatelliteCultures()
+    {
+        var satellites = ShippedUiCultures().Where(name => name != BaseCatalogue).ToList();
+        Assert(satellites.Count >= 39, $"expected 39 satellite catalogs, found {satellites.Count}");
+        return satellites;
     }
 
     /// <summary>
