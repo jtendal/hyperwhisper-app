@@ -540,6 +540,24 @@ internal static class Program
                 }
             });
 
+            // #1452. Transcribe File says a file is empty, or damaged or not audio,
+            // instead of NAudio's or Media Foundation's text; every catalog must carry both.
+            Run("Every catalog translates the empty and unreadable file toasts (#1452)", () =>
+            {
+                foreach (var key in new[] { "errors.fileEmpty", "errors.fileUnreadable" })
+                {
+                    var neutral = HyperWhisper.Resources.Strings.ResourceManager.GetString(
+                        key, CultureInfo.InvariantCulture);
+                    Assert(!string.IsNullOrWhiteSpace(neutral), $"{key} is missing from Strings.resx");
+                    foreach (var name in ShippedSatelliteCultures())
+                    {
+                        var text = HyperWhisper.Resources.Strings.ResourceManager.GetString(key, new CultureInfo(name));
+                        Assert(!string.IsNullOrWhiteSpace(text) && text != neutral,
+                            $"Strings.{name}.resx does not translate {key}");
+                    }
+                }
+            });
+
             // #1535. The Transcribe File dialog has no owner, so the tray stays live
             // while it is open. Drive the real TranscribeFileWithModeAsync on a bare
             // view model, with the dialog seam standing in for the dialog: the tray
@@ -602,6 +620,36 @@ internal static class Program
                 Assert(toast == HyperWhisper.Localization.Loc.S("errors.fileTranscriptionBusy"),
                     $"a pick that found a dictation running toasted '{toast ?? "nothing"}'");
                 Assert(!vm.CanOfferTrayFileTranscription, "the tray offers Transcribe File during a dictation");
+            });
+
+            // #1452. A cloud Mode skips the WAV conversion and sent a 0-byte file to the
+            // provider, so the toast showed the provider's error. The pick is turned away first.
+            Run("Transcribe File turns away a 0-byte file before a cloud Mode uploads it (#1452)", () =>
+            {
+                var vm = (MainViewModel)System.Runtime.CompilerServices.RuntimeHelpers
+                    .GetUninitializedObject(typeof(MainViewModel));
+                var mode = new Mode { Name = "Smoke", ProviderType = "cloud", CloudProvider = "openai" };
+                var emptyPath = TempWav("EmptyCloudPick");
+                try
+                {
+                    File.WriteAllBytes(emptyPath, Array.Empty<byte>());
+                    string? toast = null;
+                    vm.ShowErrorToastRequested += (_, e) => toast = e.Message;
+                    vm.ShowFileDialogOverride = dialog =>
+                    {
+                        dialog.FileName = emptyPath;
+                        return true;
+                    };
+                    vm.TranscribeFileWithModeAsync(mode).GetAwaiter().GetResult();
+                    Assert(toast == FileTranscriptionService.EmptyFileMessage,
+                        $"a 0-byte pick on a cloud Mode toasted '{toast ?? "nothing"}'");
+                    Assert(toast != "errors.fileEmpty", "errors.fileEmpty is missing from Strings.resx");
+                    Assert(!vm.IsTranscribing, "a 0-byte pick started a transcription");
+                }
+                finally
+                {
+                    TryDelete(emptyPath);
+                }
             });
 
             // #960. A field typed from HyperWhisper.AppClassification puts that
@@ -6477,6 +6525,74 @@ internal static class Program
                     {
                         TryDelete(converted);
                     }
+                }
+            });
+
+            Run("FileTranscriptionService says an empty, corrupt or non-audio file is that, not NAudio's text (#1452)", () =>
+            {
+                // The toast showed "Failed to convert audio file: Unable to read beyond the end of
+                // the stream" (empty or truncated WAV) and "Not a WAVE file - no RIFF header".
+                var validPath = TempWav("Unreadable.Valid");
+                var emptyPath = TempWav("Unreadable.Empty");
+                var truncatedPath = TempWav("Unreadable.TruncatedHeader");
+                var randomPath = TempWav("Unreadable.Random");
+                try
+                {
+                    using (var writer = new NAudio.Wave.WaveFileWriter(validPath, new NAudio.Wave.WaveFormat(44100, 16, 2)))
+                    {
+                        var silence = new byte[44100 * 4];
+                        writer.Write(silence, 0, silence.Length);
+                    }
+
+                    File.WriteAllBytes(emptyPath, Array.Empty<byte>());
+                    File.WriteAllBytes(truncatedPath, File.ReadAllBytes(validPath).AsSpan(0, 22).ToArray());
+                    var noise = new byte[200 * 1024];
+                    new Random(1452).NextBytes(noise);
+                    noise[0] = (byte)'X'; // never "RIFF" by chance
+                    File.WriteAllBytes(randomPath, noise);
+
+                    var empty = FileTranscriptionService.ConvertToWhisperFormatAsync(emptyPath).GetAwaiter().GetResult();
+                    Assert(empty.IsFailure && empty.Error == FileTranscriptionService.EmptyFileMessage,
+                        $"a 0-byte WAV should say it is empty, got '{(empty.IsSuccess ? empty.Value : empty.Error)}'");
+
+                    foreach (var (label, path) in new[] { ("truncated-header", truncatedPath), ("random-bytes", randomPath) })
+                    {
+                        var result = FileTranscriptionService.ConvertToWhisperFormatAsync(path).GetAwaiter().GetResult();
+                        Assert(result.IsFailure && result.Error == FileTranscriptionService.UnreadableAudioMessage,
+                            $"a {label} WAV should say it is damaged or not audio, got '{(result.IsSuccess ? result.Value : result.Error)}'");
+                    }
+
+                    // A text file named .mp3 goes to Media Foundation, which fails with
+                    // MF_E_UNSUPPORTED_BYTESTREAM_TYPE (0xC00D36C4). The fixture needs Media
+                    // Foundation, which a Windows Server runner may lack, so the classifier is
+                    // checked directly with that HRESULT.
+                    Assert(FileTranscriptionService.IsUnreadableAudio(
+                            new System.Runtime.InteropServices.COMException("unsupported", unchecked((int)0xC00D36C4))),
+                        "MF_E_UNSUPPORTED_BYTESTREAM_TYPE should read as a file that is not audio");
+                    Assert(FileTranscriptionService.IsUnreadableAudio(
+                            new InvalidDataException("Invalid MP3 file - no MP3 Frames Detected")),
+                        "Mp3FileReader's no-frames error should read as a file that is not audio");
+
+                    // A fault of the machine, not the file, keeps its own message.
+                    Assert(!FileTranscriptionService.IsUnreadableAudio(new IOException("The process cannot access the file")),
+                        "a locked file is not a damaged file");
+                    Assert(!FileTranscriptionService.IsUnreadableAudio(new UnauthorizedAccessException("Access denied")),
+                        "an access-denied file is not a damaged file");
+                    Assert(!FileTranscriptionService.IsUnreadableAudio(
+                            new System.Runtime.InteropServices.COMException("E_FAIL", unchecked((int)0x80004005))),
+                        "a COM error outside Media Foundation is not a damaged file");
+
+                    // A readable file still converts.
+                    var valid = FileTranscriptionService.ConvertToWhisperFormatAsync(validPath).GetAwaiter().GetResult();
+                    Assert(valid.IsSuccess, $"a valid 44.1 kHz stereo WAV should convert, got '{valid.Error}'");
+                    TryDelete(valid.Value!);
+                }
+                finally
+                {
+                    TryDelete(validPath);
+                    TryDelete(emptyPath);
+                    TryDelete(truncatedPath);
+                    TryDelete(randomPath);
                 }
             });
 
