@@ -596,6 +596,44 @@ public partial class MainViewModel : ViewModelBase
             ? "status.fileTranscriptionCancelled"
             : "status.recordingCancelled");
 
+    /// <summary>
+    /// The status line a job leaves when it ends (issue #1519). While a job runs the
+    /// bar shows its busy line. If that line is still there at the end, nothing put a
+    /// result up (a failure, a cancel, an undelivered transcript), so the bar goes back
+    /// to Ready. A result stays. Split out so the rule is pinnable without a MainViewModel.
+    /// </summary>
+    internal static string StatusTextAfterJob(string current, string? busy, string ready) =>
+        busy != null && current == busy ? ready : current;
+
+    // The busy line the running dictation or file job put on the status bar, or null.
+    private string? _jobStatusText;
+
+    /// <summary>Shows a job's busy line, over whatever the last job left (#1519).</summary>
+    private void ShowJobStatus(string key)
+    {
+        _jobStatusText = Loc.S(key);
+        StatusText = _jobStatusText;
+    }
+
+    /// <summary>Moves the busy line to the job's next stage, unless a result replaced it.</summary>
+    private void AdvanceJobStatus(string key)
+    {
+        if (_jobStatusText != null && StatusText == _jobStatusText)
+            ShowJobStatus(key);
+    }
+
+    /// <summary>
+    /// Ends the job's busy line: back to Ready, unless a result replaced it.
+    /// Returns true when a result stays, so a model load that follows must not overwrite it.
+    /// </summary>
+    private bool EndJobStatus()
+    {
+        var ready = Loc.S("status.ready.withHotkey", HotkeyText);
+        StatusText = StatusTextAfterJob(StatusText, _jobStatusText, ready);
+        _jobStatusText = null;
+        return StatusText != ready;
+    }
+
     private void ReportUndeliveredTranscript()
     {
         if (!ShouldReportUndeliveredTranscript())
@@ -1190,7 +1228,11 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
-    private async Task LoadWhisperModelAsync()
+    /// <param name="keepStatusText">
+    /// Leave the status bar's Loading and Ready lines out, so a file job's result stays
+    /// up (#1519). A load failure still shows.
+    /// </param>
+    private async Task LoadWhisperModelAsync(bool keepStatusText = false)
     {
         if (!PlatformHelper.SupportsWhisperTranscription)
         {
@@ -1238,12 +1280,12 @@ public partial class MainViewModel : ViewModelBase
             }
 
             IsModelLoading = true;
-            StatusText = Loc.S("status.model.loading", model.DisplayName);
+            if (!keepStatusText) StatusText = Loc.S("status.model.loading", model.DisplayName);
 
             await _transcriptionService.InitializeAsync(modelPath, p => { }, CancellationToken.None);
             IsModelLoaded = true;
             ModelStatus = Loc.S("status.model.ready", model.DisplayName);
-            StatusText = Loc.S("status.ready.withHotkey", HotkeyText);
+            if (!keepStatusText) StatusText = Loc.S("status.ready.withHotkey", HotkeyText);
         }
         catch (Exception ex)
         {
@@ -1283,9 +1325,11 @@ public partial class MainViewModel : ViewModelBase
     /// <summary>
     /// Call once the Parakeet file job no longer needs its daemon (it ended, or
     /// its load failed). Clear <see cref="_parakeetFileJobOwnsDaemon"/> first, so
-    /// the idle housekeeping can dispose the daemon again.
+    /// the idle housekeeping can dispose the daemon again. Pass keepStatusText when
+    /// the job left a result on the status bar (#1519): the load must not replace it
+    /// with Loading and then Ready.
     /// </summary>
-    private void LoadWhisperHeldOutByParakeetFileJob()
+    private void LoadWhisperHeldOutByParakeetFileJob(bool keepStatusText)
     {
         if (!_whisperLoadHeldForParakeetFileJob) return;
         _whisperLoadHeldForParakeetFileJob = false;
@@ -1294,7 +1338,15 @@ public partial class MainViewModel : ViewModelBase
         if (mode == null || mode.ProviderType == "cloud" || mode.LocalEngine == "parakeet") return;
 
         LoggingService.Info("MainViewModel: Parakeet file transcription ended; loading the Whisper model it held out");
-        LoadModelInBackground(mode);
+        LoadHeldWhisperModelInBackground(mode, keepStatusText);
+    }
+
+    // async void for the reason LoadModelInBackground gives. The mode is a Whisper
+    // mode (checked above), so this goes straight to the Whisper loader.
+    private async void LoadHeldWhisperModelInBackground(Mode mode, bool keepStatusText)
+    {
+        try { await LoadWhisperModelAsync(keepStatusText); }
+        catch (Exception ex) { ReportBackgroundModelLoadFailure("mode_switch", mode, ex); }
     }
 
     private async Task LoadParakeetModelAsync()
@@ -1917,6 +1969,7 @@ public partial class MainViewModel : ViewModelBase
         }
 
         IsRecording = true;
+        ShowJobStatus("recording.state.recording");
         SoundEffectsService.Instance.PlayStartSound();
         _audioEnvironmentState = AudioEnvironmentService.Instance.PrepareForRecording(audioRestoreClaim!);
         ShowOverlayRequested?.Invoke(this, EventArgs.Empty);
@@ -2205,6 +2258,7 @@ public partial class MainViewModel : ViewModelBase
         try
         {
             IsTranscribing = true;
+            AdvanceJobStatus("recording.state.transcribing");
             LoggingService.LogPerformanceMarker("TranscriptionFlow", "Entered transcribing state");
             ShowTranscribingRequested?.Invoke(this, EventArgs.Empty);
 
@@ -2527,6 +2581,7 @@ public partial class MainViewModel : ViewModelBase
 
             _hotkeyBlocked = false;
             LoggingService.LogPerformanceMarker("TranscriptionFlow", "Hotkey unblocked");
+            EndJobStatus();
             IsTranscribing = false;
             LoggingService.LogPerformanceMarker("TranscriptionFlow", $"Exit transcribing state after {hangWatch.ElapsedMilliseconds}ms");
             hangCts.Cancel();
