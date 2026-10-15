@@ -360,7 +360,6 @@ void CheckLiveOnlyModelIds()
     (string Path, string Symbol)[] mirrors =
     [
         ("app/windows/HyperWhisper/Services/AppClassification/CloudSttCatalog.cs", "LiveOnlyModelIds"),
-        ("app/macos/hyperwhisper/Utilities/AppClassification/CloudSTTCatalog.swift", "liveOnlyModelIds"),
     ];
 
     foreach (var (relative, symbol) in mirrors)

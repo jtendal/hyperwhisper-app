@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Sync shared preset descriptions into platform literals.
+Sync shared preset descriptions into Windows literals.
 
 Usage:
     python3 tools/sync-preset-descriptions.py
@@ -20,7 +20,7 @@ REQUIRED_FIELDS = ("displayName", "tooltip", "preview", "description")
 
 
 def load_json(root: Path) -> dict[str, dict[str, str]]:
-    path = root / "shared-types" / "preset-descriptions.json"
+    path = root / "shared-prompts" / "preset-descriptions.json"
     with path.open("r", encoding="utf-8") as handle:
         data = json.load(handle)
 
@@ -63,56 +63,6 @@ def write_if_changed(path: Path, contents: str) -> bool:
 
     path.write_text(contents, encoding="utf-8", newline="")
     return True
-
-
-def sync_macos_strings(root: Path, presets: dict[str, dict[str, str]]) -> bool:
-    path = (
-        root
-        / "app"
-        / "macos"
-        / "hyperwhisper"
-        / "Localizations"
-        / "Base.lproj"
-        / "Localizable.strings"
-    )
-    source = path.read_text(encoding="utf-8")
-    replacements: dict[str, str] = {}
-
-    for preset_id in PRESET_IDS:
-        preset = presets[preset_id]
-        replacements[f"modes.preset.{preset_id}.name"] = preset["displayName"]
-        replacements[f"modes.preset.{preset_id}.tooltip"] = preset["tooltip"]
-        replacements[f"modes.preset.{preset_id}.preview"] = preset["preview"]
-
-    seen: set[str] = set()
-    pattern = re.compile(
-        r'^(?P<prefix>"(?P<key>modes\.preset\.[^.]+\.(?:name|tooltip|preview))"\s*=\s*")'
-        r'(?P<value>(?:[^"\\]|\\.)*)'
-        r'(?P<suffix>";\s*)$'
-    )
-    lines: list[str] = []
-
-    for line in source.splitlines(keepends=True):
-        newline = "\n" if line.endswith("\n") else ""
-        body = line[:-1] if newline else line
-        match = pattern.match(body)
-
-        if match and match.group("key") in replacements:
-            key = match.group("key")
-            seen.add(key)
-            lines.append(
-                f'{match.group("prefix")}{escape_string(replacements[key])}{match.group("suffix")}{newline}'
-            )
-        else:
-            lines.append(line)
-
-    missing = sorted(set(replacements) - seen)
-    if missing:
-        raise ValueError(
-            f"{path.relative_to(root)} is missing keys: {', '.join(missing)}"
-        )
-
-    return write_if_changed(path, "".join(lines))
 
 
 def replace_switch_method(
@@ -190,7 +140,6 @@ def main() -> int:
     try:
         presets = load_json(root)
         changed = [
-            ("macOS Base Localizable.strings", sync_macos_strings(root, presets)),
             ("Windows PresetType.cs", sync_windows_preset_type(root, presets)),
         ]
     except (OSError, ValueError, json.JSONDecodeError) as error:

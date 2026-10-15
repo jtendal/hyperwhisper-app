@@ -22196,7 +22196,7 @@ internal static class Program
 
     /// <summary>
     /// The live Windows appcast, copied next to the test binary from
-    /// <c>nextjs/public/appcast-windows.xml</c> — the very file the shipped app
+    /// <c>app/windows/updates/appcast-windows.xml</c> — the very file the shipped app
     /// fetches over HTTP.
     /// </summary>
     private static string LiveWindowsAppcastPath()

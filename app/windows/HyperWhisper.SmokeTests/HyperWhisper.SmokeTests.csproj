@@ -32,7 +32,7 @@
          replay the very feed the shipped app fetches and pin the 15 releases it
          renders, so #353's move of the selection rules into the shared core is
          proven against real input rather than a hand-written sample. -->
-    <Content Include="../../../nextjs/public/appcast-windows.xml"
+    <Content Include="../../../app/windows/updates/appcast-windows.xml"
              Link="appcast-windows.xml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

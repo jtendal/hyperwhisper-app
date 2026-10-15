@@ -1,4 +1,0 @@
-module CSystemLinux {
-  header "CSystemLinux.h"
-  export *
-}

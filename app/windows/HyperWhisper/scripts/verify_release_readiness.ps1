@@ -156,7 +156,7 @@ try {
         Assert-Contains $depsX64 "procedure Dependency_AddVC2015To2022;" "x64 dependency library must define the VC++ runtime installer"
     }
 
-    $appcastPath = "nextjs\public\appcast-windows.xml"
+    $appcastPath = "app\windows\updates\appcast-windows.xml"
     $appcast = Read-File $appcastPath
     $appcastMatches = [regex]::Matches($appcast, '<sparkle:shortVersionString>(?<value>\d+\.\d+\.\d+)</sparkle:shortVersionString>')
     if ($appcastMatches.Count -eq 0) {
@@ -169,15 +169,7 @@ try {
         Select-Object -First 1
 
     if (-not $SkipAppcastValidator) {
-        $node = Get-Command node -ErrorAction SilentlyContinue
-        if (-not $node) {
-            Fail "Node.js is required to validate $appcastPath; pass -SkipAppcastValidator only when another gate runs nextjs/scripts/validate-windows-appcast.js"
-        }
-
-        & node "nextjs\scripts\validate-windows-appcast.js"
-        if ($LASTEXITCODE -ne 0) {
-            Fail "Windows appcast validator failed"
-        }
+        & "$PSScriptRoot/validate-windows-appcast.ps1"
     }
 
     if ($TargetVersion.Trim()) {

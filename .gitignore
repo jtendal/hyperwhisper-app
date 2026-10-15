@@ -14,16 +14,6 @@ obj/
 shared-core-rs/target/
 target/
 
-# Built Rust core for macOS. Deliberately NOT committed: it is a 65 MB
-# universal static lib, and the 11 versions that were tracked accounted for
-# 52% of the whole repository. Xcode's "Ensure Rust Core" build phase builds
-# it on demand; CI rebuilds it from source on every run. Mirrors the Windows
-# side, which tracks only .gitkeep under Resources/rust-core/.
-# The generated hyperwhisper_coreFFI.h alongside it IS committed.
-app/macos/hyperwhisper/Libraries/libhyperwhisper_core.a
-# Linux CI and local release builds stage the Rust core here before publish.
-# Keep only the directory placeholder; the ELF is rebuilt from source.
-app/linux/HyperWhisper.Linux/Resources/rust-core/linux-x64/libhyperwhisper_core.so
 .vs/
 *.DotSettings.user
 
@@ -37,31 +27,9 @@ artifacts/
 # Rider IDE
 .idea/
 
-# Xcode
-.build/
-*.xcuserstate
-xcuserdata/
-*.xcworkspace/xcuserdata/
-*.xcodeproj/xcuserdata/
-*.xcodeproj/project.xcworkspace/xcuserdata/
-*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
-*.xcworkspace/xcshareddata/swiftpm/Package.resolved
-
-# Build products
+# Build output
 build/
-DerivedData/
-
-# Swift Package Manager
-Packages/
-Package.resolved
-
-# macOS
-.DS_Store
-
-# Builds
 app/.build/
-macos-builds/
-build_test/
 
 .env
 *.env

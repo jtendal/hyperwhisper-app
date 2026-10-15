@@ -1,6 +1,6 @@
 # Shared Prompt Templates
 
-Cross-platform AI post-processing system prompts for HyperWhisper. These templates are the single source of truth for all platforms (macOS, Windows, iOS, Android).
+AI post-processing system prompts used by HyperWhisper for Windows. These templates are the single source of truth for the prompt builder.
 
 ## Directory Structure
 
@@ -77,3 +77,9 @@ The final system prompt is assembled by the platform-specific prompt builder in 
 4. Preset template (with placeholders substituted)
 5. Mode flags (`<MODE_FLAGS>` block for punctuation, capitalization, profanity filter)
 6. User system prompt (if set, wrapped in `<USER_SYSTEM_PROMPT>` tags)
+
+## Preset descriptions
+
+`preset-descriptions.json` supplies Windows preset labels and descriptions.
+Run `python3 tools/verify-preset-descriptions.py` from the repository root;
+use `python3 tools/sync-preset-descriptions.py` after editing the catalog.

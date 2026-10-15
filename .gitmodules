@@ -1,3 +1,0 @@
-[submodule "integrations/hyperwhisper-mcp"]
-	path = integrations/hyperwhisper-mcp
-	url = https://github.com/hyperwhisper-app/hyperwhisper-mcp.git

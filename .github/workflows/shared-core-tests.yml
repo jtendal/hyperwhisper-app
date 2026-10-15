@@ -1,23 +1,3 @@
-# Tests + lints for the shared Rust core and its conformance vectors.
-#
-# Without this gate the Rust half of the completion-policy conformance contract
-# (shared-conformance/completion-vectors.json, consumed by both the Rust vector
-# tests and the cloud backend's bun tests) would be honor-system: the macOS and
-# Windows release workflows only BUILD the core, they never run its tests.
-#
-# The same argument now covers the catalog, app-type and backup vectors: this
-# is where tests/catalog_vectors.rs, tests/app_type_vectors.rs and
-# tests/backup_vectors.rs run, and each is the ONLY head that calls the core
-# with no app around it. Linux CI runs `cargo test` too, but its path filter is
-# narrower than this one's.
-#
-# Deliberately a plain `cargo test` (not --release): the workspace release
-# profile pins lto=true / codegen-units=1 for the shipped artifacts, which is
-# brutally slow for a PR check and buys nothing here.
-#
-# NOTE: this repo's Actions policy is `allowed_actions: local_only`, so
-# marketplace actions (actions/checkout, actions/cache, …) startup-fail the
-# run. The checkout below is done manually with git for that reason.
 name: Shared Core Tests
 
 on:
@@ -25,8 +5,6 @@ on:
     paths:
       - "shared-core-rs/**"
       - "shared-conformance/**"
-      # hw-catalog include_str!s these, so a catalog-only edit changes what the
-      # crate answers and must re-run its vectors (issue #279).
       - "shared-app-classification/**"
       - "shared-models/**"
       - ".github/workflows/shared-core-tests.yml"
@@ -35,8 +13,6 @@ on:
     paths:
       - "shared-core-rs/**"
       - "shared-conformance/**"
-      # hw-catalog include_str!s these, so a catalog-only edit changes what the
-      # crate answers and must re-run its vectors (issue #279).
       - "shared-app-classification/**"
       - "shared-models/**"
       - ".github/workflows/shared-core-tests.yml"
@@ -46,10 +22,6 @@ jobs:
     name: cargo test + clippy
     runs-on: ubuntu-latest
     steps:
-      # Manual checkout (see the local-only note above). GITHUB_SHA is the PR
-      # merge commit on pull_request events and the pushed head on push events;
-      # fetching it by SHA works because it's reachable from the advertised
-      # refs (refs/pull/N/merge / the branch).
       - name: Checkout
         run: |
           git init -q .
@@ -59,17 +31,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-      # rustup reads shared-core-rs/rust-toolchain.toml (pinned 1.86.0 with
-      # clippy) on first cargo invocation; `rustup show` triggers the install
-      # up front so the log separates toolchain setup from the build.
       - name: Install pinned toolchain
         working-directory: shared-core-rs
         run: rustup show
 
       - name: cargo test
         working-directory: shared-core-rs
-        run: cargo test
+        run: cargo test --workspace --locked
 
       - name: cargo clippy
         working-directory: shared-core-rs
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings

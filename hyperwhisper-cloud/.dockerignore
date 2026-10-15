@@ -1,9 +1,0 @@
-# flyctl launch added from .gitignore
-**/node_modules
-**/dist
-**/.env
-**/.env.local
-**/*.log
-**/.DS_Store
-**/bun.lockb
-fly.toml

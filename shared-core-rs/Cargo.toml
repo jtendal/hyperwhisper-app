@@ -1,7 +1,5 @@
 # HyperWhisper shared Rust core — Cargo workspace.
 #
-# A single Rust core consumed by macOS (Swift), Windows (C#), iOS (Swift) and
-# (later) Android (Kotlin) via UniFFI. See README.md for the rebuild commands
 # and the milestone plan this implements.
 [workspace]
 resolver = "2"
@@ -32,7 +30,6 @@ exclude = [
 ]
 
 # Shared release profile for every crate's artifacts. Matches the tuning the
-# retired `app/macos/rphonetic-ffi` crate used (small, LTO, stripped) so the
 # committed binaries stay lean.
 [profile.release]
 opt-level = "s"
@@ -42,9 +39,7 @@ codegen-units = 1
 panic = "abort"
 # NOTE: `trim-paths = "all"` would be the clean fix for source paths leaking
 # into the committed artifacts, but it is nightly-only on the pinned 1.86
-# toolchain. Until it stabilizes, build-apple.sh passes
 # `--remap-path-prefix` via RUSTFLAGS to keep $HOME and the workspace path
-# out of the committed .a (this repo is public).
 
 # UniFFI versions are pinned in one place. uniffi-bindgen-cs (the community C#
 # generator) is version-locked to a specific uniffi release; its latest tag

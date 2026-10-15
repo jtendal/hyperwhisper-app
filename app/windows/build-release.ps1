@@ -293,7 +293,7 @@ function Show-Summary {
 
     Write-Host ""
     Write-Host "Appcast XML snippet:" -ForegroundColor Yellow
-    Write-Host "Download URLs use the same root R2 key convention as .github/workflows/windows-release.yml and nextjs/public/appcast-windows.xml." -ForegroundColor Gray
+    Write-Host "Download URLs use the same root R2 key convention as .github/workflows/windows-release.yml and app/windows/updates/appcast-windows.xml." -ForegroundColor Gray
     foreach ($installer in $Installers) {
         Write-Host @"
 <item>

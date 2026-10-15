@@ -1,5 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedCoreRoot>$(MSBuildThisFileDirectory)../../../shared-core-rs/target</SharedCoreRoot>
+    <SharedCoreNativeLibrary Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(SharedCoreRoot)/x86_64-pc-windows-msvc/release/hyperwhisper_core.dll</SharedCoreNativeLibrary>
+    <SharedCoreNativeLibrary Condition="'$(SharedCoreNativeLibrary)' == ''">$(SharedCoreRoot)/x86_64-unknown-linux-gnu/release/libhyperwhisper_core.so</SharedCoreNativeLibrary>
+  </PropertyGroup>
+  <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -9,15 +14,15 @@
 
   <ItemGroup>
     <ProjectReference Include="../HyperWhisper.CloudAccount/HyperWhisper.CloudAccount.csproj" />
-    <Content Include="../../../shared-core-rs/target/x86_64-unknown-linux-gnu/release/libhyperwhisper_core.so"
-             Condition="Exists('../../../shared-core-rs/target/x86_64-unknown-linux-gnu/release/libhyperwhisper_core.so')">
-      <Link>libhyperwhisper_core.so</Link>
+    <Content Include="$(SharedCoreNativeLibrary)"
+             Condition="Exists('$(SharedCoreNativeLibrary)')">
+      <Link>%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
 
   <Target Name="EnsureSharedCoreNativeLibrary" BeforeTargets="Build">
-    <Error Condition="!Exists('../../../shared-core-rs/target/x86_64-unknown-linux-gnu/release/libhyperwhisper_core.so')"
+    <Error Condition="!Exists('$(SharedCoreNativeLibrary)')"
            Text="Build shared-core-rs in release mode before running the cloud-account tests." />
   </Target>
 </Project>

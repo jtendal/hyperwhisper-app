@@ -1,62 +1,23 @@
-# Lightweight PR gate for the Windows app: compile + smoke test, no signing.
-#
-# The counterpart to macos-ci.yml. Deliberately NOT a trimmed-down
-# windows-release.yml — it skips Inno Setup, installer packaging, Authenticode
-# and Ed25519 signing, R2 upload, appcast mutation, and release creation
-# entirely. Its only job is to prove `main` and open PRs still compile against
-# a real .NET 10 / Windows toolchain and survive the smoke suite.
-#
-# Before this existed, Windows-only changes (including regenerated UniFFI
-# bindings, which Windows then vendored under
-# app/windows/HyperWhisper/Generated/RustCore/) merged with zero verification:
-# windows-release.yml is workflow_dispatch-only, so binding↔DLL drift surfaced
-# for the first time at release time. The vendored copy is gone as of issue
-# #275 — Windows compiles shared-core-rs/bindings/csharp/ through
-# HyperWhisper.SharedCore, and binding-drift.yml keeps it that way — but this
-# job is still where binding↔DLL drift is caught, at the smoke suite's first
-# FFI call.
 name: Windows CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, windows-only]
     paths: &ci-paths
       - "app/windows/**"
-      # ProjectReferenced by the Windows head (HyperWhisper.Application,
-      # HyperWhisper.Platform.Abstractions, HyperWhisper.SharedCore), so a
-      # shared-dotnet-only change can break this build. Since issue #275 the
-      # generated UniFFI binding compiles here too, which makes the coupling
-      # total: nothing Windows-side would catch a break otherwise.
       - "app/shared-dotnet/**"
       - "shared-core-rs/**"
-      # Embedded into the app assembly as resources (see the EmbeddedResource
-      # blocks in HyperWhisper.csproj) and read at runtime, so a catalog- or
-      # prompt-only change must still trigger this gate.
       - "shared-app-classification/**"
       - "shared-models/**"
       - "shared-prompts/**"
-      # The golden catalog, app-type and backup vectors (issues #277, #279,
-      # #280), run by the conformance steps below.
+      - "app/windows/updates/**"
       - "shared-conformance/**"
       - ".github/workflows/windows-ci.yml"
   push:
-    branches: [main]
-    # Same path filter as pull_request above, via YAML anchor (&ci-paths /
-    # *ci-paths) — plain YAML alias resolution, not a GitHub Actions feature,
-    # so this is safe: the parser expands it before Actions ever sees the
-    # workflow.
+    branches: [main, windows-only]
     paths: *ci-paths
 
 concurrency:
-  # PR runs: a newer push to the same PR branch supersedes the older run, so
-  # cancelling the in-progress one is correct and desired.
-  #
-  # push-to-main runs: github.ref is the same literal string (refs/heads/main)
-  # for every push, so keying on it alone would mean a second commit landing on
-  # main while the first's CI is still running cancels that first run outright —
-  # losing its pass/fail record. Keying push events on github.sha instead gives
-  # every push its own group, and cancel-in-progress is scoped to pull_request
-  # only so push runs never cancel each other. (Mirrors macos-ci.yml.)
   group: windows-ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
@@ -65,30 +26,15 @@ jobs:
     name: Build & Smoke Test (Windows, unsigned)
     runs-on: windows-latest
     steps:
-      # ----------------------------------------------------------------
-      # 1. Checkout
-      # ----------------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ----------------------------------------------------------------
-      # 2. Setup .NET 10 SDK
-      # ----------------------------------------------------------------
-      # Same version/quality as windows-release.yml — a PR must compile
-      # against the toolchain that ships the release.
       - name: Setup .NET 10 SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
-          dotnet-quality: "preview"
 
-      # ----------------------------------------------------------------
-      # 3. Cache the Rust build
-      # ----------------------------------------------------------------
-      # The release-profile core build below dominates this job's wall clock
-      # (the workspace pins lto=true / codegen-units=1). Keyed on the pinned
-      # toolchain + lockfile so a dependency bump busts it; the restore-keys
-      # fallback still reuses the registry when only first-party crates change.
+
       - name: Cache cargo registry and target dir
         uses: actions/cache@v4
         with:
@@ -100,175 +46,46 @@ jobs:
           restore-keys: |
             windows-ci-cargo-
 
-      # ----------------------------------------------------------------
-      # 4. Build the Rust shared core (x64 only)
-      # ----------------------------------------------------------------
-      # Unlike macOS — which commits a static lib for fast local Xcode builds —
-      # Windows commits only .gitkeep placeholders under Resources/rust-core/,
-      # and the csproj's EnsureRustCoreDll target hard-errors when the DLL is
-      # absent. So this is not an optional freshness step; nothing compiles
-      # without it.
-      #
-      # x64 only: the ARM64 cross-build would roughly double this job for no
-      # extra compile coverage (same sources, same bindings). windows-release.yml
-      # still builds both, and ARM64 is exercised manually before tagging — the
-      # same coverage limitation the smoke tests already document.
-      #
-      # --release matches the release path exactly, so a link or LTO failure
-      # can't hide behind a dev-profile build here.
       - name: Build Rust shared core (x64)
         working-directory: shared-core-rs
         run: |
           rustup show
           rustup target add x86_64-pc-windows-msvc
-          cargo build --release --target x86_64-pc-windows-msvc
+          cargo build --locked --release --target x86_64-pc-windows-msvc
 
           $dest = "..\app\windows\HyperWhisper\Resources\rust-core\x64"
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
           Copy-Item "target\x86_64-pc-windows-msvc\release\hyperwhisper_core.dll" "$dest\hyperwhisper_core.dll" -Force
           Write-Host "x64 DLL: $((Get-Item "$dest\hyperwhisper_core.dll").Length) bytes"
 
-      # ----------------------------------------------------------------
-      # 5. Publish the DLL as an artifact
-      # ----------------------------------------------------------------
-      # Windows commits only .gitkeep placeholders under Resources/rust-core/,
-      # so the ONLY fresh x64 DLL for a given commit is the one step 4 just
-      # built on this runner. A machine without a Rust toolchain — the Windows
-      # dev box that runs the smoke suite by hand — had no way to get it, and a
-      # hand-copied DLL from an older commit fails the smoke suite at the first
-      # FFI call: "FAIL ffi checksum touch", the same UniFFI handshake step 6
-      # relies on. Publishing it here makes every commit that changes the core
-      # carry its matching binary.
-      #
-      # This step sits BEFORE the smoke suite on purpose: a DLL that built but
-      # fails the handshake is exactly the one somebody needs in their hands to
-      # debug, so the upload must not depend on the suite passing.
-      #
-      # The name is stable (no SHA in it) because the run already carries the
-      # commit: a consumer resolves a SHA to its run with
-      # `/actions/runs?head_sha=…`, then reads that run's artifacts. PR runs
-      # publish too, which is what lets the dev box test a branch head.
       - name: Upload x64 shared-core DLL
         uses: actions/upload-artifact@v4
         with:
           name: hyperwhisper-core-x64
           path: app\windows\HyperWhisper\Resources\rust-core\x64\hyperwhisper_core.dll
           if-no-files-found: error
-          # Long enough that a dev box a few weeks behind main still finds the
-          # build for the commit it has checked out; short of the 90-day
-          # default because these are debug aids, not release artifacts.
           retention-days: 30
 
-      # ----------------------------------------------------------------
-      # 6. Build + run the smoke tests
-      # ----------------------------------------------------------------
-      # HyperWhisper.SmokeTests ProjectReferences the main app, so this single
-      # command compiles the whole WPF app (the compile gate) and then runs the
-      # suite: the first FFI call trips the UniFFI contract-version + API
-      # checksum handshake, catching generated-binding ↔ DLL drift, followed by
-      # unit checks over the retry/timeout/vocabulary machinery and a WPF init
-      # smoke. No secrets, no network, no signing — safe on fork PRs.
       - name: Run smoke tests (build + FFI + unit checks)
         run: dotnet run --project app/windows/HyperWhisper.SmokeTests -c Release
 
-      # ----------------------------------------------------------------
-      # 7. Catalog conformance vectors
-      # ----------------------------------------------------------------
-      # shared-conformance/catalog-vectors.json is one file run by all three
-      # platforms (Rust in shared-core-tests.yml, Swift in macos-ci.yml, this
-      # step for .NET). Issue #280 left exactly one catalog decoder, so these
-      # vectors are what proves the Windows binding still reads the same
-      # answers — the deepgramNova3 picker language list had already drifted
-      # between the platforms before the decoders were unified.
       - name: Run catalog conformance vectors
         run: dotnet run --project app/shared-dotnet/HyperWhisper.CatalogConformance.Tests -c Release
 
-      # ----------------------------------------------------------------
-      # 8. App-type conformance vectors
-      # ----------------------------------------------------------------
-      # shared-conformance/app-type-vectors.json, the same three-platform
-      # shape. Issue #279 left exactly one app-type classifier, so these
-      # vectors prove the Windows binding still reads the same priority order,
-      # word-boundary rule, host-suffix rule and email regex the Swift and Rust
-      # heads do.
       - name: Run app-type conformance vectors
         run: dotnet run --project app/shared-dotnet/HyperWhisper.AppTypeConformance.Tests -c Release
 
-      # ----------------------------------------------------------------
-      # 9. Backup conformance vectors
-      # ----------------------------------------------------------------
-      # shared-conformance/backup-vectors.json, the same three-platform shape
-      # (issues #277 and #288). The smoke suite above already runs the rows
-      # Windows OWNS — modeNormalization, windowsSettings and the
-      # unknown-key/foreign-slice round trips through the real SettingsService.
-      # This harness runs the rest of the file: the Linux settings adapters and
-      # the macOS settings adapter, the latter straight off the binding.
-      #
-      # It is the same portable project Linux CI's shared-dotnet sweep runs, so
-      # this step is a SECOND HOST for it. That is the point: the settings
-      # mapping is one Rust implementation now, and this is what proves the
-      # Windows binding reads its answers unchanged rather than only the
-      # Linux one.
       - name: Run backup conformance vectors
         run: dotnet run --project app/shared-dotnet/HyperWhisper.Backup.Application.Tests -c Release
 
-      # ----------------------------------------------------------------
-      # 10. Phonetic conformance vectors
-      # ----------------------------------------------------------------
-      # shared-conformance/phonetic-vectors.json, the same three-platform
-      # shape. Issue #283 left exactly one phonetic matcher and exactly one
-      # diacritic-insensitive substring pass, so these vectors prove the
-      # Windows binding reads the same answers the Swift and Rust heads do.
-      # The matcher rows carry a `decision` field naming which native matcher
-      # each unified answer came from — the file is the record of where the
-      # two natives disagreed.
       - name: Run phonetic conformance vectors
         run: dotnet run --project app/shared-dotnet/HyperWhisper.PhoneticConformance.Tests -c Release
 
-      # ----------------------------------------------------------------
-      # 11. Home statistics conformance vectors
-      # ----------------------------------------------------------------
-      # shared-conformance/stats-vectors.json, the same three-platform shape.
-      # Issue #285 left exactly one set of home-statistics formulas, so these
-      # vectors prove the Windows binding reads the same answers the Swift and
-      # Rust heads do. Each case carries a `decision` field naming which of the
-      # three native copies the unified answer came from — the file is the
-      # record of where they disagreed, and Windows changes on four of them:
-      # the week and month boundaries move from UTC to the user's own time
-      # zone, and rounding moves from banker's to half away from zero.
       - name: Run home statistics conformance vectors
         run: dotnet run --project app/shared-dotnet/HyperWhisper.StatsConformance.Tests -c Release
 
-      # ----------------------------------------------------------------
-      # 12. Language catalog conformance vectors
-      # ----------------------------------------------------------------
-      # shared-conformance/language-vectors.json, the same three-platform shape.
-      # Issue #285 left exactly one language catalog and exactly one
-      # canonicalization rule, so these vectors prove the Windows binding reads
-      # the same rows the Swift and Rust heads do. Every catalog row carries a
-      # `decision` field naming where the unified row came from, and Windows is
-      # the head that changes: it deletes a hand-written 102-row table and GAINS
-      # the 24 region and script variants only macOS listed (en-GB, pt-BR,
-      # zh-Hant and the rest), plus canonicalization — a stored `en_GB` or
-      # `zh-hant` used to match no row at all and the picker printed the raw
-      # tag. One row is renamed: zh-TW now reads "Chinese (Traditional,
-      # Taiwan)", so it is distinguishable from the zh-Hant row beside it.
       - name: Run language catalog conformance vectors
         run: dotnet run --project app/shared-dotnet/HyperWhisper.LanguageConformance.Tests -c Release
 
-      # ----------------------------------------------------------------
-      # 13. First-run mode seed
-      # ----------------------------------------------------------------
-      # shared-conformance/mode-seed-vectors.json, the same three-platform
-      # shape. Issue #285's final item left exactly one .NET seeder: Windows'
-      # ModeDefaults now delegates to PortableModeDefaults, so this harness IS
-      # the Windows head's seed coverage, and it asserts through the same Mode
-      # entity both heads compile. Windows is the head that changes most — a
-      # fresh install drops from six seeded modes to one, and the catalog
-      # lookups that used to be hardcoded here now come from hw-catalog.
-      #
-      # Windows CI names each project explicitly, unlike Linux CI's
-      # shared-dotnet sweep, so this line is what makes the vectors run here at
-      # all.
       - name: Run first-run mode seed conformance vectors
         run: dotnet run --project app/shared-dotnet/HyperWhisper.ModeDefaults.Tests -c Release

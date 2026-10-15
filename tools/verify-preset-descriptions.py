@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Verify shared preset descriptions against macOS and Windows literals.
+Verify shared preset descriptions against Windows literals.
 
 Usage:
     python3 tools/verify-preset-descriptions.py
@@ -23,7 +23,7 @@ def decode_string_literal(value: str) -> str:
 
 
 def load_json(root: Path) -> dict[str, dict[str, str]]:
-    path = root / "shared-types" / "preset-descriptions.json"
+    path = root / "shared-prompts" / "preset-descriptions.json"
     with path.open("r", encoding="utf-8") as handle:
         data = json.load(handle)
 
@@ -44,27 +44,6 @@ def load_json(root: Path) -> dict[str, dict[str, str]]:
             )
 
     return presets
-
-
-def load_macos_strings(root: Path) -> dict[str, str]:
-    path = (
-        root
-        / "app"
-        / "macos"
-        / "hyperwhisper"
-        / "Localizations"
-        / "Base.lproj"
-        / "Localizable.strings"
-    )
-    strings: dict[str, str] = {}
-    pattern = re.compile(r'^"(?P<key>[^"]+)"\s*=\s*"(?P<value>(?:[^"\\]|\\.)*)";')
-
-    for line in path.read_text(encoding="utf-8").splitlines():
-        match = pattern.match(line)
-        if match:
-            strings[match.group("key")] = decode_string_literal(match.group("value"))
-
-    return strings
 
 
 def extract_switch_method(source: str, method_name: str) -> dict[str, str]:
@@ -107,7 +86,6 @@ def main() -> int:
 
     try:
         presets = load_json(root)
-        macos_strings = load_macos_strings(root)
         windows_display_names, windows_descriptions = load_windows_preset_methods(root)
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"ERROR: {error}")
@@ -117,24 +95,6 @@ def main() -> int:
 
     for preset_id in PRESET_IDS:
         preset = presets[preset_id]
-        compare(
-            f"macOS {preset_id} displayName",
-            preset["displayName"],
-            macos_strings.get(f"modes.preset.{preset_id}.name"),
-            errors,
-        )
-        compare(
-            f"macOS {preset_id} tooltip",
-            preset["tooltip"],
-            macos_strings.get(f"modes.preset.{preset_id}.tooltip"),
-            errors,
-        )
-        compare(
-            f"macOS {preset_id} preview",
-            preset["preview"],
-            macos_strings.get(f"modes.preset.{preset_id}.preview"),
-            errors,
-        )
         compare(
             f"Windows {preset_id} displayName",
             preset.get("windowsDisplayName", preset["displayName"]),

@@ -1,4 +1,0 @@
-module hyperwhisper_coreFFI {
-    header "hyperwhisper_coreFFI.h"
-    export *
-}
