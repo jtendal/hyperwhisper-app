@@ -39,13 +39,10 @@ public class TranscriptionOrchestrator : IDisposable
     // minutes; pinging /warmup every 45s keeps the pool warm so a hotkey press
     // after a long idle window still reuses the connection instead of paying
     // TCP+TLS handshake again.
-    private System.Timers.Timer? _keepaliveTimer;
-    private Func<Mode?>? _keepaliveModeGetter;
+
     // `System.Timers.Timer.Stop()` doesn't cancel an already-queued Elapsed
     // callback on the ThreadPool, so a stale tick can still fire after
     // Deactivated / Dispose. Check this flag inside the tick handler.
-    private volatile bool _keepaliveStopped;
-    private static readonly TimeSpan KeepaliveInterval = TimeSpan.FromSeconds(45);
 
     /// <summary>
     /// Event raised when post-processing fails but transcription succeeded.
@@ -94,8 +91,6 @@ public class TranscriptionOrchestrator : IDisposable
     /// Pre-warms the HyperWhisper Cloud connection if the given mode resolves to cloud.
     /// Fire-and-forget — safe to call from any hotkey-down path.
     /// </summary>
-    public void PrewarmCloudConnectionIfActive(Mode? mode)
-        => _providerFactory.PrewarmCloudConnectionIfActive(mode);
 
     /// <summary>
     /// Starts the foreground keepalive ticker. Call from
@@ -103,62 +98,10 @@ public class TranscriptionOrchestrator : IDisposable
     /// <c>MainWindow.Deactivated</c> so we don't keep pinging while the app is
     /// in the background.
     /// </summary>
-    public void StartKeepalive(Func<Mode?> selectedModeGetter)
-    {
-        if (selectedModeGetter == null) throw new ArgumentNullException(nameof(selectedModeGetter));
-        _keepaliveModeGetter = selectedModeGetter;
-        _keepaliveStopped = false;
-        if (_keepaliveTimer != null) return;
-
-        var timer = new System.Timers.Timer(KeepaliveInterval.TotalMilliseconds)
-        {
-            AutoReset = true
-        };
-        timer.Elapsed += OnKeepaliveTick;
-        _keepaliveTimer = timer;
-        timer.Start();
-        LoggingService.Debug("TranscriptionOrchestrator: Keepalive started");
-    }
 
     /// <summary>
     /// Stops the keepalive ticker. Idempotent.
     /// </summary>
-    public void StopKeepalive()
-    {
-        _keepaliveStopped = true;
-
-        var timer = _keepaliveTimer;
-        if (timer == null) return;
-        _keepaliveTimer = null;
-
-        try
-        {
-            timer.Stop();
-            timer.Elapsed -= OnKeepaliveTick;
-            timer.Dispose();
-        }
-        catch (Exception ex)
-        {
-            LoggingService.Warn($"TranscriptionOrchestrator: Keepalive stop failed: {ex.Message}");
-        }
-        LoggingService.Debug("TranscriptionOrchestrator: Keepalive stopped");
-    }
-
-    private void OnKeepaliveTick(object? sender, System.Timers.ElapsedEventArgs e)
-    {
-        // Stop()/Dispose() on System.Timers.Timer doesn't cancel an
-        // already-queued Elapsed callback, so drop late ticks here.
-        if (_keepaliveStopped || _disposed) return;
-        try
-        {
-            var mode = _keepaliveModeGetter?.Invoke();
-            _providerFactory.PrewarmCloudConnectionIfActiveForced(mode);
-        }
-        catch (Exception ex)
-        {
-            LoggingService.Warn($"TranscriptionOrchestrator: Keepalive tick failed: {ex.Message}");
-        }
-    }
 
     // =========================================================================
     // MAIN API
@@ -411,13 +354,7 @@ public class TranscriptionOrchestrator : IDisposable
         string result;
         try
         {
-            if (providerType == CloudTranscriptionProvider.HyperWhisperCloud && provider is HyperWhisperCloudService hwCloud)
-            {
-                // HyperWhisper Cloud supports accuracy tier + per-provider model + domain selection
-                result = await hwCloud.TranscribeAsync(audioPath, language, effectiveVocabulary,
-                    mode.CloudAccuracyTier, mode.CloudTranscriptionModel, mode.CloudTranscriptionDomain, cancellationToken);
-            }
-            else if (providerType == CloudTranscriptionProvider.AssemblyAI && provider is AssemblyAIService assemblyAIService)
+            if (providerType == CloudTranscriptionProvider.AssemblyAI && provider is AssemblyAIService assemblyAIService)
             {
                 // Pass an already-known duration (e.g. the file-import flow's
                 // NAudio probe, or the live-recording flow's RecordingDuration) as
@@ -562,8 +499,6 @@ public class TranscriptionOrchestrator : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-
-        StopKeepalive();
 
         _postProcessingService.WarningOccurred -= OnPostProcessingWarning;
         _providerFactory.Dispose();

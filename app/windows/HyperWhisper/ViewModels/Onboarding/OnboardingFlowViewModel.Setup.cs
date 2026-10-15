@@ -13,14 +13,6 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
     // SETUP STEP
     // =========================================================================
 
-    private bool _isActivatingLicense;
-
-    public bool IsActivatingLicense
-    {
-        get => _isActivatingLicense;
-        private set => SetProperty(ref _isActivatingLicense, value);
-    }
-
     private string? _setupErrorMessage;
 
     /// <summary>
@@ -63,97 +55,6 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Bug 3. The activation task is owned, replaces any earlier one, and its result
-    /// is discarded unless the flow is still live. Activation is the user's single
-    /// explicit account action, so entitlement stays server enforced; nothing here
-    /// shortcuts or fakes it.
-    /// </summary>
-    [RelayCommand]
-    public void ActivateCloudLicense()
-    {
-        if (!_isLive)
-            return;
-
-        var key = LicenseKeyInput.Trim();
-        if (key.Length == 0 || IsActivatingLicense)
-            return;
-
-        var scope = new ValidationScope(
-            OnboardingSourceKind.HyperWhisperCloud, CloudTranscriptionProvider.OpenAI, key);
-
-        IsActivatingLicense = true;
-        _activationErrorMessage = null;
-        RunTracked(OnboardingTaskKeys.Activation, ct => ActivateCloudLicenseCoreAsync(scope, key, ct));
-    }
-
-    private async Task ActivateCloudLicenseCoreAsync(
-        ValidationScope scope,
-        string key,
-        CancellationToken cancellationToken)
-    {
-        OnboardingLicenseOutcome outcome;
-        try
-        {
-            outcome = await _license.ActivateAsync(key, cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-        catch (Exception ex)
-        {
-            // The sibling spinner, IsTestingKey, was already recoverable because
-            // every entry to the Configure step clears it. This one was not: a
-            // throwing ActivateAsync left the button reading "Activating…" and
-            // disabled for good, with Continue gated on an activation that could
-            // never be retried. Both are now cleared on the same terms.
-            if (cancellationToken.IsCancellationRequested || !_isLive || CurrentValidationScope != scope)
-                return;
-
-            IsActivatingLicense = false;
-            _activationErrorMessage = ex.Message;
-            RefreshSetupError();
-            _taskBox.Clear(OnboardingTaskKeys.Activation);
-            return;
-        }
-
-        if (cancellationToken.IsCancellationRequested || !_isLive)
-            return;
-
-        // KEY-A's "Activation limit reached." must not be shown under KEY-B. The
-        // licence TEST continuation has always dropped a superseded result; this one
-        // did not, so the error line was misattributed to whatever the field held
-        // when it landed. Note the activation itself is NOT undone - it reached the
-        // server for KEY-A and _license.IsActive is the honest record of that.
-        if (CurrentValidationScope != scope)
-        {
-            IsActivatingLicense = false;
-            _taskBox.Clear(OnboardingTaskKeys.Activation);
-            return;
-        }
-
-        IsActivatingLicense = false;
-        _activationErrorMessage = outcome.IsValid ? null : outcome.ErrorMessage;
-        if (outcome.IsValid)
-            RecordValidationOutcome(scope, true);
-
-        RefreshSetupError();
-        _taskBox.Clear(OnboardingTaskKeys.Activation);
-
-        // StepDidChange fetches the balance on entry to Configure and to Setup, and
-        // both of those run BEFORE this activation. On a first-run machine the licence
-        // only goes active right here, so every earlier fetch happened unlicensed and
-        // came back unknown - "Credits confirmed" stayed unticked and the Done summary
-        // fell back to a bare source name, on a perfectly good key. Nothing else
-        // refreshed it, so this is the fetch that fills it in.
-        //
-        // force: true because the cloud manager caches, and the cached miss was taken
-        // while the machine was still unlicensed.
-        if (outcome.IsValid)
-            RefreshCredits(force: true);
-    }
-
-    /// <summary>
     /// The Setup step's "Save API key".
     ///
     /// It used to capture a restore point and persist WITHOUT probing, and recorded
@@ -188,7 +89,7 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
         {
             OnboardingSourceKind.OnDevice =>
                 SelectedModel is null ? null : _downloadErrors.Message(SelectedModel.Kind),
-            OnboardingSourceKind.HyperWhisperCloud => _activationErrorMessage,
+
             OnboardingSourceKind.YourProvider => _providerErrorMessage,
             _ => null
         };

@@ -250,24 +250,6 @@ public partial class App : WpfApplication
             // Continue - auto-delete failure shouldn't block app startup
         }
 
-        // LICENSE INITIALIZATION
-        // Load stored license from cache (validates against server if cache expired)
-        // Fire-and-forget to avoid blocking UI thread - license will validate in background
-        // Using Task.Run to avoid deadlock from .Wait() on UI thread
-        // ast-grep-ignore: no-discarded-task-run -- the caller is on the UI thread, so a blocking wait here deadlocks (see the comment above)
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await LicenseManager.Instance.LoadStoredLicenseAsync();
-            }
-            catch (Exception ex)
-            {
-                LoggingService.Warn($"Failed to load stored license: {ex.Message}");
-                // Continue with trial mode - don't block app startup
-            }
-        });
-
         // MODEL DOWNLOAD LEFTOVERS
         // A kill, crash or power loss mid-download left that model's partial
         // file or folder in Models for good; remove it now (#1599).

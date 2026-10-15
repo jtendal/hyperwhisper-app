@@ -387,7 +387,7 @@ public partial class MainViewModel : ViewModelBase
                 ShowErrorToastRequested?.Invoke(this, new ErrorToastEventArgs(
                     ex is TranscriptionException txEx ? txEx.GetUserMessage() : Loc.S("errors.transcriptionFailed", ex.Message),
                     showSettingsButton: isCredentialError || isCloudAccountError,
-                    settingsSection: isCloudAccountError ? "Cloud" : null,
+                    settingsSection: null,
                     openApiKeysManager: isCredentialError));
 
                 StatusText = Loc.S("status.failed", ex.Message);
@@ -691,36 +691,7 @@ public partial class MainViewModel : ViewModelBase
 
     private void OnStreamingSessionCompleted(double durationSeconds, double creditsUsed)
     {
-        LoggingService.Info($"Streaming session complete: {durationSeconds:F2}s, {creditsUsed:F2} credits");
-        SentryService.AddBreadcrumb(
-            "streaming_session_complete",
-            "audio.streaming",
-            data: new Dictionary<string, string>
-            {
-                ["provider"] = GetStreamingProviderDisplayName(),
-                ["durationSeconds"] = durationSeconds.ToString("F2"),
-                ["creditsUsed"] = creditsUsed.ToString("F2")
-            });
-
-        var provider = StreamingTranscriptionProviderExtensions.FromStorageValue(_settingsService.StreamingProvider);
-        if (provider != StreamingTranscriptionProvider.HyperWhisperCloud)
-            return;
-
-        var cloudManager = HyperWhisperCloudManager.Instance;
-        cloudManager.InvalidateCache();
-        _ = RefreshHyperWhisperCloudCreditsAfterStreamingAsync();
-    }
-
-    private static async Task RefreshHyperWhisperCloudCreditsAfterStreamingAsync()
-    {
-        try
-        {
-            await HyperWhisperCloudManager.Instance.RefreshCreditsAsync();
-        }
-        catch (Exception ex)
-        {
-            LoggingService.Warn($"Streaming credit refresh failed: {ex.Message}");
-        }
+        LoggingService.Info($"Streaming session complete: {durationSeconds:F2}s");
     }
 
     private async Task CleanupStreamingSessionAsync()

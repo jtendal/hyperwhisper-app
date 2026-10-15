@@ -1,21 +1,3 @@
-// TRANSCRIPTION PROVIDER FACTORY
-// Owns and lazily creates all cloud transcription provider instances.
-// Centralizes API key retrieval and provider configuration.
-//
-// DESIGN:
-// - Lazy<T> ensures providers only created when first needed
-// - Single point of configuration (API key lookup)
-// - A cached (BYOK) instance holds per-PROFILE state only: its HttpClient and
-//   the API key. The per-CALL model id and Gemini custom prompt travel in the
-//   TranscriptionRequest the caller passes to TranscribeAsync (issue #753), so
-//   two overlapping transcriptions on the shared instance cannot swap models.
-// - Proper disposal of all HttpClient resources
-// - EXCEPT the HW-Cloud-routed providers (Azure MAI, Google Chirp), which are
-//   built fresh per request. They own no HttpClient, and their per-request
-//   model id must not be shared mutable state — see GetConfiguredCloudProvider.
-//
-// NOTE: Does NOT own TranscriptionService (local) - that requires
-// model loading and has different lifecycle management.
 
 using System.Net.Http;
 using HyperWhisper.Data.Entities;
@@ -43,11 +25,8 @@ public class TranscriptionProviderFactory : IDisposable
     private readonly Lazy<GeminiTranscriptionService> _gemini;
     private readonly Lazy<GeminiTranscribeService> _geminiTranscribe;
     private readonly Lazy<MetaMuseService> _meta;
-    private readonly Lazy<HyperWhisperCloudService> _hyperWhisperCloud;
-    private readonly Lazy<GrokSttService> _grok;
 
-    // NO Lazy<> for the HW-Cloud-routed services (Azure MAI, Google Chirp).
-    // They are built per request instead — see GetConfiguredCloudProvider.
+    private readonly Lazy<GrokSttService> _grok;
 
     private readonly Func<CloudTranscriptionProvider, string?> _apiKeyLookup;
 
@@ -84,35 +63,18 @@ public class TranscriptionProviderFactory : IDisposable
         _gemini = new Lazy<GeminiTranscriptionService>(() => new GeminiTranscriptionService(httpHandler));
         _geminiTranscribe = new Lazy<GeminiTranscribeService>(() => new GeminiTranscribeService(httpHandler));
         _meta = new Lazy<MetaMuseService>(() => new MetaMuseService(httpHandler));
-        _hyperWhisperCloud = new Lazy<HyperWhisperCloudService>(() => new HyperWhisperCloudService());
+
         _grok = new Lazy<GrokSttService>(() => new GrokSttService(httpHandler));
 
         LoggingService.Debug("TranscriptionProviderFactory: Initialized (providers will be created on first use)");
     }
-
-    // =========================================================================
-    // PUBLIC API
-    // =========================================================================
-
-    /// <summary>
-    /// Gets a configured cloud provider ready for transcription.
-    /// Provider is lazily created on first access and cached for reuse.
-    /// </summary>
-    /// <remarks>
-    /// For an API-key (BYOK) provider the returned instance is SHARED and
-    /// carries no model: pass the model in the
-    /// <see cref="TranscriptionRequest"/> of each call, resolved with
-    /// <see cref="ResolveModelId"/>. Only the HW-Cloud-routed arms use
-    /// <paramref name="modelId"/> here, because they are built per request.
-    /// </remarks>
-    /// <param name="providerType">The cloud provider to get.</param>
-    /// <param name="modelId">Model ID for the routed arms (uses provider default if null).</param>
-    /// <returns>Configured ITranscriptionProvider ready to use.</returns>
-    /// <exception cref="TranscriptionException">If API key is missing for providers that require it.</exception>
     public ITranscriptionProvider GetConfiguredCloudProvider(
         CloudTranscriptionProvider providerType,
         string? modelId = null)
     {
+        if (!providerType.IsAvailable())
+            throw new TranscriptionException(TranscriptionErrorCode.ApiKeyMissing,
+                "This provider is no longer available. Select a local model or configure your own API provider.", providerType.ToString());
         // Get API key (validates for providers that require it)
         string? apiKey = _apiKeyLookup(providerType);
 
@@ -140,29 +102,9 @@ public class TranscriptionProviderFactory : IDisposable
             CloudTranscriptionProvider.Gemini => ConfigureAndReturn(_gemini.Value, apiKey!),
             CloudTranscriptionProvider.GeminiTranscribe => ConfigureAndReturn(_geminiTranscribe.Value, apiKey!),
             CloudTranscriptionProvider.Meta => ConfigureAndReturn(_meta.Value, apiKey!),
-            CloudTranscriptionProvider.HyperWhisperCloud => ConfigureHyperWhisperCloud(_hyperWhisperCloud.Value),
+
             CloudTranscriptionProvider.Grok => ConfigureAndReturn(_grok.Value, apiKey!),
-            // HW-Cloud-routed providers — no API key, but the selected model
-            // still has to reach the request: it travels as X-STT-Model, which
-            // the routed client only sends when the service resolves one. Azure
-            // MAI serves two models at two prices, so an unconfigured service
-            // silently ran the backend default instead of the user's choice.
-            //
-            // BUILT PER REQUEST, NOT CACHED. Every other arm here hands back a
-            // cached Lazy<T> instance and mutates it (Configure sets the key and
-            // the model). Doing that for a routed provider is a billing bug: this
-            // factory is owned by the process-wide TranscriptionRuntime.Orchestrator
-            // singleton and nothing locks, so two overlapping transcriptions
-            // overwrite each other's model between here and the send. These two
-            // services hold no HttpClient (the routed client's is static and
-            // shared) and no other state, so a fresh instance costs an allocation
-            // and makes the model immutable per-call — the same property macOS
-            // gets from AzureMAIProvider.routedModelId and shared .NET from
-            // RoutedModelFor. The BYOK arms above are cached and so carry no
-            // model at all: theirs travels in each call's TranscriptionRequest
-            // (issue #753).
-            CloudTranscriptionProvider.MicrosoftAzureSpeech => new AzureMAITranscriptionService(effectiveModelId),
-            CloudTranscriptionProvider.GoogleSpeech => new GoogleChirpTranscriptionService(effectiveModelId),
+
             _ => throw new ArgumentException($"Unknown cloud provider: {providerType}")
         };
     }
@@ -197,49 +139,6 @@ public class TranscriptionProviderFactory : IDisposable
         // Model name is configuration detail, not relevant for history display
         return provider.GetDisplayName();
     }
-
-    /// <summary>
-    /// Returns true if the given mode resolves to HyperWhisper Cloud at /transcribe time.
-    /// </summary>
-    public static bool IsHyperWhisperCloudActive(Mode? mode)
-    {
-        // Exactly "cloud", like the orchestrator (#1548): a legacy "Cloud" row runs on-device.
-        if (mode == null || !LocalModeModel.IsCloud(mode)) return false;
-        return CloudTranscriptionProviderExtensions.FromModeCloudProvider(mode.CloudProvider)
-            == CloudTranscriptionProvider.HyperWhisperCloud;
-    }
-
-    /// <summary>
-    /// Pre-warms the HyperWhisper Cloud connection if — and only if — cloud is
-    /// currently the active transcription provider for the given mode. Safe to
-    /// call from any hotkey-down path. Fire-and-forget.
-    /// </summary>
-    public void PrewarmCloudConnectionIfActive(Mode? mode)
-    {
-        if (!IsHyperWhisperCloudActive(mode)) return;
-        _hyperWhisperCloud.Value.PrewarmConnection();
-    }
-
-    /// <summary>
-    /// Variant that bypasses the 60s warmup debounce. Used by the foreground
-    /// keepalive ticker so its ~45s cadence isn't absorbed into the debounce.
-    /// Hotkey paths must keep using <see cref="PrewarmCloudConnectionIfActive"/>.
-    /// </summary>
-    public void PrewarmCloudConnectionIfActiveForced(Mode? mode)
-    {
-        if (!IsHyperWhisperCloudActive(mode)) return;
-        _hyperWhisperCloud.Value.PrewarmConnectionForced();
-    }
-
-    // =========================================================================
-    // API KEY RETRIEVAL (Extracted from MainViewModel/HistoryViewModel)
-    // =========================================================================
-
-    /// <summary>
-    /// Gets the API key for a cloud transcription provider.
-    /// Routes to PostProcessingProvider for shared keys (OpenAI, Groq, Gemini, Grok)
-    /// or TranscriptionApiKeyType for providers without post-processing support.
-    /// </summary>
     public static string? GetApiKeyForProvider(CloudTranscriptionProvider provider)
     {
         return provider switch
@@ -284,13 +183,6 @@ public class TranscriptionProviderFactory : IDisposable
         return service;
     }
 
-    private static ITranscriptionProvider ConfigureHyperWhisperCloud(HyperWhisperCloudService service)
-    {
-        // No configuration needed - service gets fresh credentials from LicenseManager
-        // on each request. This ensures license deactivation is immediately reflected.
-        return service;
-    }
-
     // =========================================================================
     // DISPOSAL
     // =========================================================================
@@ -311,10 +203,8 @@ public class TranscriptionProviderFactory : IDisposable
         SafeDispose(_gemini);
         SafeDispose(_geminiTranscribe);
         SafeDispose(_meta);
-        SafeDispose(_hyperWhisperCloud);
+
         SafeDispose(_grok);
-        // No SafeDispose for the routed services: they are not cached here, and
-        // their Dispose is a no-op (the routed HttpClient is process-wide).
 
         LoggingService.Debug("TranscriptionProviderFactory: Disposed");
         GC.SuppressFinalize(this);

@@ -6,7 +6,6 @@ using HyperWhisper.Platform.Abstractions;
 using HyperWhisper.ModelManagement;
 using HyperWhisper.SpeechOutput;
 using HyperWhisper.SharedCore;
-using HyperWhisper.CloudAccount;
 using HyperWhisper.ModelReadiness;
 using HyperWhisper.Statistics;
 
@@ -38,10 +37,6 @@ public sealed class ApplicationShellViewModel : ViewModelBase, IDisposable
         ICredentialStore? credentials = null,
         string localWhisperRuntimeStatus = "Local Whisper runtime not connected",
         PortableFileTranscriptionPreflight? filePreflight = null,
-        PortableCloudAccountService? cloudAccount = null,
-        IDeviceIdentityProvider? deviceIdentity = null,
-        string deviceName = "Linux device",
-        Func<Uri, PlatformResult>? openAccountUri = null,
         ITextInjectionService? historyTextInjection = null,
         ModelReadinessService? modelReadiness = null,
         AboutViewModel? about = null,
@@ -93,9 +88,6 @@ public sealed class ApplicationShellViewModel : ViewModelBase, IDisposable
             modelManager, modelReadiness, streamingSettings: Settings);
         Backup = new BackupViewModel(new ApplicationBackupService(database, settings, credentials));
         Credentials = credentials is null ? null : new CredentialManagementViewModel(credentials);
-        Account = cloudAccount is not null && deviceIdentity is not null && openAccountUri is not null
-            ? new CloudAccountViewModel(cloudAccount, deviceIdentity, deviceName, openAccountUri)
-            : null;
         About = about;
         Recording = transcriptionWorkflow is null ? null : new TranscriptionWorkflowViewModel(
             transcriptionWorkflow,
@@ -132,7 +124,6 @@ public sealed class ApplicationShellViewModel : ViewModelBase, IDisposable
     public ModelLibraryViewModel? Models { get; }
     public BackupViewModel Backup { get; }
     public CredentialManagementViewModel? Credentials { get; }
-    public CloudAccountViewModel? Account { get; }
     public AboutViewModel? About { get; }
     public TranscriptionWorkflowViewModel? Recording { get; }
     public UiStatus Status { get; } = new();
@@ -243,7 +234,6 @@ public sealed class ApplicationShellViewModel : ViewModelBase, IDisposable
             Settings.Load();
             await Task.WhenAll(Home.RefreshAsync(_lifetime.Token), History.RefreshAsync(_lifetime.Token), Vocabulary.RefreshAsync(_lifetime.Token), Modes.RefreshAsync(_lifetime.Token));
             History.SetRetryModes(Modes.Items);
-            if (Account is not null) await Account.LoadAsync(_lifetime.Token);
             if (Settings.Status.HasError || Home.Status.HasError || History.Status.HasError
                 || Vocabulary.Status.HasError || Modes.Status.HasError)
             {
@@ -278,7 +268,6 @@ public sealed class ApplicationShellViewModel : ViewModelBase, IDisposable
             "models" when Models is not null => (Text("linux.models.library.title", "Model Library"), Models),
             "backup" => (Text("settings.nav.backup", "Backup"), Backup),
             "credentials" when Credentials is not null => (Text("linux.ui.provider.credentials", "Credentials"), Credentials),
-            "account" when Account is not null => (Text("linux.ui.cloud.account", "Cloud account"), Account),
             "about" when About is not null => (Text("settings.nav.about", "About"), About),
             _ => throw new ArgumentException("Unknown navigation page.", nameof(pageId))
         };

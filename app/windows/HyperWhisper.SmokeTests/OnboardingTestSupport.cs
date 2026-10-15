@@ -126,131 +126,9 @@ internal sealed class FakeOnboardingCatalog : IOnboardingModelCatalog
 // Licence
 // =============================================================================
 
-internal sealed class FakeOnboardingLicense : IOnboardingLicenseGateway
-{
-    public bool IsActive { get; set; }
-    public OnboardingLicenseOutcome ProbeOutcome { get; set; } = new(true, null);
-    public OnboardingLicenseOutcome ActivateOutcome { get; set; } = new(true, null);
-    public List<string> ProbedKeys { get; } = new();
-    public List<string> ActivatedKeys { get; } = new();
-
-    /// <summary>When true, the next probe parks until <see cref="Release"/>.</summary>
-    public bool GateProbe { get; set; }
-
-    /// <summary>When true, the next activation parks until <see cref="Release"/>.</summary>
-    public bool GateActivation { get; set; }
-
-    // ONE FIELD PER CALL, deliberately.
-    //
-    // A single shared _gate made this fake LIE in two ways, and a fuzz round paid
-    // for it: parking a probe after an activation overwrote the activation's
-    // TaskCompletionSource, so Release() completed only the probe and the
-    // activation's continuation was orphaned forever - the flow looked stuck on a
-    // state no production code could produce. And Release() nulled the field, so
-    // IsParked read false while a call was still parked, which turned a real
-    // "landed after the window closed" case into a silent pass.
-    private TaskCompletionSource<bool>? _probeGate;
-    private TaskCompletionSource<bool>? _activationGate;
-
-    public async Task<OnboardingLicenseOutcome> ProbeAsync(string key, CancellationToken cancellationToken)
-    {
-        if (GateProbe)
-        {
-            var gate = new TaskCompletionSource<bool>();
-            _probeGate = gate;
-            await gate.Task;
-        }
-
-        ProbedKeys.Add(key);
-        return ProbeOutcome;
-    }
-
-    public async Task<OnboardingLicenseOutcome> ActivateAsync(string key, CancellationToken cancellationToken)
-    {
-        if (GateActivation)
-        {
-            var gate = new TaskCompletionSource<bool>();
-            _activationGate = gate;
-            await gate.Task;
-        }
-
-        ActivatedKeys.Add(key);
-        if (ActivateOutcome.IsValid)
-            IsActive = true;
-        return ActivateOutcome;
-    }
-
-    /// <summary>
-    /// Let every parked call land, long after the window may have closed. Releasing
-    /// both is what the old single-gate version pretended to do; a caller that needs
-    /// one at a time has <see cref="ReleaseProbe"/> and <see cref="ReleaseActivation"/>.
-    /// </summary>
-    public void Release()
-    {
-        ReleaseProbe();
-        ReleaseActivation();
-    }
-
-    public void ReleaseProbe()
-    {
-        var gate = _probeGate;
-        _probeGate = null;
-        gate?.TrySetResult(true);
-    }
-
-    public void ReleaseActivation()
-    {
-        var gate = _activationGate;
-        _activationGate = null;
-        gate?.TrySetResult(true);
-    }
-
-    public bool IsParked => _probeGate is not null || _activationGate is not null;
-
-    public bool IsProbeParked => _probeGate is not null;
-
-    public bool IsActivationParked => _activationGate is not null;
-}
-
 // =============================================================================
 // Credits
 // =============================================================================
-
-internal sealed class FakeOnboardingCredits : IOnboardingCreditsGateway
-{
-    public OnboardingCloudCredits? Credits { get; set; }
-    public bool IsFetching { get; set; }
-    public int RefreshCount { get; private set; }
-    public bool ThrowOnRefresh { get; set; }
-
-    /// <summary>The key the last refresh was asked to read the balance for, if any.</summary>
-    public string? LastLicenseKeyOverride { get; private set; }
-
-    /// <summary>What a successful refresh lands, if anything.</summary>
-    public OnboardingCloudCredits? NextCredits { get; set; }
-
-    public event EventHandler? CreditsChanged;
-
-    public Task RefreshAsync(bool force, CancellationToken cancellationToken, string? licenseKeyOverride = null)
-    {
-        RefreshCount++;
-        LastLicenseKeyOverride = licenseKeyOverride;
-
-        if (ThrowOnRefresh)
-            return Task.FromException(new InvalidOperationException("credits endpoint unreachable"));
-
-        if (NextCredits is not null)
-            Credits = NextCredits;
-
-        return Task.CompletedTask;
-    }
-
-    public void Publish(OnboardingCloudCredits? credits)
-    {
-        Credits = credits;
-        CreditsChanged?.Invoke(this, EventArgs.Empty);
-    }
-}
 
 // =============================================================================
 // Provider keys
@@ -631,38 +509,6 @@ internal sealed class FakeOnboardingCommitter : IOnboardingSourceCommitter
 // IsActivatingLicense with no coverage.
 // =============================================================================
 
-internal sealed class ThrowingOnboardingLicense : IOnboardingLicenseGateway
-{
-    private readonly FakeOnboardingLicense _inner;
-    private readonly bool _probeThrows;
-    private readonly bool _activateThrows;
-
-    public ThrowingOnboardingLicense(FakeOnboardingLicense inner, bool probeThrows, bool activateThrows)
-    {
-        _inner = inner;
-        _probeThrows = probeThrows;
-        _activateThrows = activateThrows;
-    }
-
-    public bool IsActive => _inner.IsActive;
-
-    public async Task<OnboardingLicenseOutcome> ProbeAsync(string key, CancellationToken cancellationToken)
-    {
-        var outcome = await _inner.ProbeAsync(key, cancellationToken);
-        if (_probeThrows)
-            throw new InvalidOperationException("licence probe blew up");
-        return outcome;
-    }
-
-    public async Task<OnboardingLicenseOutcome> ActivateAsync(string key, CancellationToken cancellationToken)
-    {
-        var outcome = await _inner.ActivateAsync(key, cancellationToken);
-        if (_activateThrows)
-            throw new InvalidOperationException("activation blew up");
-        return outcome;
-    }
-}
-
 internal sealed class ThrowingOnboardingProviderKeys : IOnboardingProviderKeyGateway
 {
     private readonly FakeOnboardingProviderKeys _inner;
@@ -696,8 +542,7 @@ internal sealed class OnboardingHarness
 
     public FakeOnboardingPermissions Permissions { get; } = new();
     public FakeOnboardingCatalog Catalog { get; } = new();
-    public FakeOnboardingLicense License { get; } = new();
-    public FakeOnboardingCredits Credits { get; } = new();
+
     public FakeOnboardingProviderKeys ProviderKeys { get; } = new();
     public FakeOnboardingAudio Audio { get; } = new();
     public FakeOnboardingCommitter Committer { get; } = new();
@@ -709,14 +554,11 @@ internal sealed class OnboardingHarness
     /// </param>
     /// <param name="providerKeys">The same, for <see cref="ProviderKeys"/>.</param>
     public OnboardingHarness(
-        IOnboardingLicenseGateway? license = null,
         IOnboardingProviderKeyGateway? providerKeys = null)
     {
         Flow = new OnboardingFlowViewModel(
             Permissions,
             Catalog,
-            license ?? License,
-            Credits,
             providerKeys ?? ProviderKeys,
             Audio,
             Committer,

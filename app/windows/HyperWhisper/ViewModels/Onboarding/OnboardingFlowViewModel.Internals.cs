@@ -26,7 +26,7 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
 
         // Both derive from KeyValidated plus a per-session record, so they move on
         // strictly fewer occasions than KeyValidated - but never on more.
-        OnPropertyChanged(nameof(CloudKeyIsVerified));
+
         OnPropertyChanged(nameof(ProviderKeyIsVerified));
     }
 

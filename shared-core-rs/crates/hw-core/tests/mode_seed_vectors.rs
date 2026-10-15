@@ -308,18 +308,13 @@ fn vectors_cover_the_agreed_contract() {
     assert_eq!(first.id, "00000000-0000-0000-0000-000000000001");
     assert_eq!(first.name, "Hyper");
     assert_eq!(first.language, "auto");
-    assert_eq!(first.post_processing_provider, "hyperwhispercloud");
-    assert_eq!(first.provider_type, "cloud");
+    assert_eq!(first.post_processing_provider, "");
+    assert_eq!(first.provider_type, "local");
     assert!(first.is_default);
-    // The `<engineId>:<modelId>` form macOS' parser needs to avoid falling back
-    // to Grok.
-    assert!(
-        first
-            .cloud_post_processing_model
-            .split_once(':')
-            .is_some_and(|(engine, model)| !engine.is_empty() && !model.is_empty()),
-        "the seeded post-processing model lost its `<engineId>:<modelId>` form"
-    );
+    assert_eq!(first.post_processing_mode, 0);
+    assert!(first.cloud_provider.is_empty());
+    assert!(first.cloud_post_processing_model.is_empty());
+
 }
 
 /// Writes the vectors from the current shared-core answer. Ignored by default;

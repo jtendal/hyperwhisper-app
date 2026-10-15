@@ -34,13 +34,13 @@ public partial class SettingsService
     public string StreamingProvider
     {
         get => string.IsNullOrWhiteSpace(_settings.StreamingProvider)
-            ? Models.StreamingTranscriptionProvider.HyperWhisperCloud.StorageValue()
+            ? Models.StreamingTranscriptionProvider.Deepgram.StorageValue()
             : _settings.StreamingProvider!;
         set
         {
             var normalized = Models.StreamingTranscriptionProviderExtensions.IsValidStorageValue(value)
                 ? value
-                : Models.StreamingTranscriptionProvider.HyperWhisperCloud.StorageValue();
+                : Models.StreamingTranscriptionProvider.Deepgram.StorageValue();
 
             if (_settings.StreamingProvider != normalized)
             {
@@ -55,7 +55,7 @@ public partial class SettingsService
     /// <summary>
     /// Which vendor HyperWhisper Cloud's live route uses, as a
     /// cloud-stt-catalog.json entry id. Meaningful only while
-    /// <see cref="StreamingProvider"/> is "hyperwhisperCloud"; every other
+    /// <see cref="StreamingProvider"/> is "deepgram"; every other
     /// provider ignores it.
     ///
     /// Reuses <c>CloudAccuracyTier</c>'s value space on purpose, so the picker

@@ -17,6 +17,8 @@ public static class StreamingTranscriptionSessionFactory
     {
         var settings = SettingsService.Instance;
         var provider = StreamingTranscriptionProviderExtensions.FromStorageValue(settings.StreamingProvider);
+        if (provider == StreamingTranscriptionProvider.HyperWhisperCloud)
+            return Result<StreamingTranscriptionClient>.Failure("HyperWhisper Cloud is no longer available.");
         var apiKeyType = GetApiKeyType(provider);
         var postProcessingApiKeyType = GetPostProcessingApiKeyType(provider);
         var apiKey = GetApiKey(provider);
@@ -43,8 +45,8 @@ public static class StreamingTranscriptionSessionFactory
         }
 
         var config = new StreamingSessionConfig(
-            LicenseKey: LicenseManager.Instance.GetStoredLicenseKey(),
-            DeviceId: DeviceIdService.Instance.GetDeviceId(),
+            LicenseKey: null,
+            DeviceId: null,
             Language: settings.StreamingLanguage,
             Vocabulary: BuildVocabulary(provider, vocabularyWords),
             ApiKey: apiKey,
@@ -55,7 +57,7 @@ public static class StreamingTranscriptionSessionFactory
             FastFormatting: settings.StreamingFastFormatting,
             RemoveFillerWords: settings.RemoveFillerWords,
             // Read for HyperWhisper Cloud only; the core ignores it elsewhere.
-            CloudTier: settings.StreamingCloudTier
+            CloudTier: null
         );
 
         return Result<StreamingTranscriptionClient>.Success(

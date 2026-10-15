@@ -49,22 +49,22 @@ Assert(hyper.Language == "auto", "the seeded mode does not auto-detect language"
 // C7: ProviderType and Model are different columns. macOS overloads its `model`
 // attribute with this token because it has no providerType; the .NET entity has
 // both and the seeder must leave Model alone.
-Assert(hyper.ProviderType == "cloud", "the seeded mode is not a cloud mode");
+Assert(hyper.ProviderType == "local", "the seeded mode is not local");
 Assert(hyper.Model is null, "the seeder wrote Mode.Model, which is the local engine's column, not ProviderType's");
 
-Assert(hyper.CloudProvider == "hyperwhisper", "the seeded cloud transcription provider changed");
-Assert(hyper.CloudAccuracyTier == "elevenLabsScribeV2", "the seeded cloud accuracy tier changed");
-Assert(hyper.CloudTranscriptionModel == "scribe_v2", "the STT model did not resolve from the shared catalog");
+Assert(hyper.CloudProvider == "", "the seeded cloud transcription provider changed");
+Assert(hyper.CloudAccuracyTier == "", "the seeded cloud accuracy tier changed");
+Assert(hyper.CloudTranscriptionModel == "", "the STT model did not resolve from the shared catalog");
 
 // The canonical stored spelling. Windows and Linux already fold "hyperwhisper"
 // and "hyperwhisper_cloud" onto it; macOS learned to read all three before it
 // started seeding this.
-Assert(hyper.PostProcessingMode == 1, "the seeded mode does not post-process");
-Assert(hyper.PostProcessingProvider == "hyperwhispercloud", "the seeded post-processing provider changed");
+Assert(hyper.PostProcessingMode == 0, "the seeded mode must not post-process");
+Assert(hyper.PostProcessingProvider == "", "the seeded post-processing provider changed");
 
 // C2: keep the engine:model prefix. macOS' parser falls back to GROK on a value
 // it cannot split, so a bare model id would silently change the model there.
-Assert(hyper.CloudPostProcessingModel == "anthropic:claude-haiku-5-5",
+Assert(hyper.CloudPostProcessingModel == "",
     "the post-processing model did not resolve from the shared catalog, or lost its engine prefix");
 
 Assert(hyper.EnglishSpelling == "british", "GB locale seed is incorrect");

@@ -1172,12 +1172,7 @@ internal static class TranscribeEndpoints
         if (LocalModeModel.IsCloud(mode))
         {
             var provider = CloudTranscriptionProviderExtensions.FromModeCloudProvider(mode.CloudProvider);
-            if (provider == CloudTranscriptionProvider.HyperWhisperCloud)
-            {
-                return HyperWhisperCloudService.ResolveDictationModelId(
-                    CloudAccuracyTierExtensions.FromString(mode.CloudAccuracyTier).ToStorageValue(),
-                    mode.CloudTranscriptionModel);
-            }
+            if (!provider.IsAvailable()) return "";
             // A BYOK provider sends this field verbatim, so it is already the
             // model that ran — except when it is unset, where the provider
             // applies its own default.

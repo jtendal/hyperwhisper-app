@@ -443,6 +443,6 @@ internal sealed class LiveProtocolStreamingStrategy : IStreamingProviderStrategy
         StreamingTranscriptionProvider.OpenAI => LiveTranscriptionProvider.OpenAi,
         StreamingTranscriptionProvider.Xai => LiveTranscriptionProvider.Grok,
         StreamingTranscriptionProvider.GeminiTranscribe => LiveTranscriptionProvider.GeminiTranscribe,
-        _ => LiveTranscriptionProvider.HyperWhisperCloud
+        _ => throw new ArgumentOutOfRangeException(nameof(provider), "Select a supported API provider.")
     };
 }

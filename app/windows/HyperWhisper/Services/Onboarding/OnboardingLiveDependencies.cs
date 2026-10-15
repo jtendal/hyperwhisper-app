@@ -521,133 +521,9 @@ public sealed class LiveOnboardingModelCatalog : IOnboardingModelCatalog, IDispo
 // License
 // =============================================================================
 
-/// <summary>
-/// HyperWhisper Cloud. Probe is read-only; Activate is the single explicit action
-/// that writes account state. Entitlement itself stays server side and there is
-/// no local shortcut here - there must never be one.
-/// </summary>
-public sealed class LiveOnboardingLicenseGateway : IOnboardingLicenseGateway
-{
-    private readonly LicenseManager _manager;
-
-    public LiveOnboardingLicenseGateway(LicenseManager manager)
-    {
-        _manager = manager;
-    }
-
-    public bool IsActive => _manager.IsLicensed;
-
-    // A SWALLOWED CANCEL IS STILL A CANCEL.
-    //
-    // LicenseNetworkService catches OperationCanceledException and returns
-    // Failed("Validation cancelled", Invalid) rather than rethrowing, so without
-    // these two lines the flow's own `catch (OperationCanceledException) { return; }`
-    // never ran and a cancelled call arrived at the continuation looking exactly
-    // like a rejected licence key - complete with "Validation cancelled" rendered
-    // as the reason the key was refused.
-
-    public async Task<OnboardingLicenseOutcome> ProbeAsync(string key, CancellationToken cancellationToken)
-    {
-        var result = await _manager.ProbeLicenseAsync(key, cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
-        return ToOutcome(result);
-    }
-
-    public async Task<OnboardingLicenseOutcome> ActivateAsync(string key, CancellationToken cancellationToken)
-    {
-        var result = await _manager.ActivateLicenseAsync(key, cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
-        return ToOutcome(result);
-    }
-
-    private static OnboardingLicenseOutcome ToOutcome(LicenseValidationResult result) =>
-        new(result.IsValid, result.IsValid ? null : (result.ErrorMessage ?? Loc.S("app.unknown.error")));
-}
-
 // =============================================================================
 // Credits
 // =============================================================================
-
-/// <summary>
-/// The cloud credit balance, flattened to what the two cloud panels show.
-///
-/// Display only: it never gates Continue, and a fetch failure is swallowed into
-/// "credits unknown" rather than becoming a setup error. macOS gets this by
-/// injecting HyperWhisperCloudManager into the sheet as an @EnvironmentObject,
-/// which the singleton rule at the top of this file forbids here.
-/// </summary>
-public sealed class LiveOnboardingCreditsGateway : IOnboardingCreditsGateway, IDisposable
-{
-    private readonly HyperWhisperCloudManager _manager;
-    private bool _disposed;
-
-    public LiveOnboardingCreditsGateway(HyperWhisperCloudManager manager)
-    {
-        _manager = manager;
-        _manager.CreditsUpdated += OnCreditsUpdated;
-        _manager.PropertyChanged += OnManagerPropertyChanged;
-    }
-
-    public event EventHandler? CreditsChanged;
-
-    public OnboardingCloudCredits? Credits => Flatten(_manager.Credits);
-
-    public bool IsFetching => _manager.IsFetchingCredits;
-
-    internal static OnboardingCloudCredits? Flatten(HyperWhisperCloudCredits? credits) =>
-        credits is null
-            ? null
-            : new OnboardingCloudCredits(credits.CreditsRemaining, credits.MinutesRemaining, credits.FormattedBalance);
-
-    /// <summary>
-    /// FetchCreditsAsync self-guards against re-entry, so calling this on entry to
-    /// both cloud steps is safe. A failure never propagates: the panels render an
-    /// ellipsis and the flow moves on.
-    /// </summary>
-    public async Task RefreshAsync(bool force, CancellationToken cancellationToken, string? licenseKeyOverride = null)
-    {
-        try
-        {
-            await _manager.FetchCreditsAsync(force, cancellationToken, licenseKeyOverride);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            LoggingService.Warn($"LiveOnboardingCreditsGateway: credits unavailable: {ex.Message}");
-        }
-        finally
-        {
-            CreditsChanged?.Invoke(this, EventArgs.Empty);
-        }
-    }
-
-    private void OnCreditsUpdated(object? sender, EventArgs e) => CreditsChanged?.Invoke(this, EventArgs.Empty);
-
-    private void OnManagerPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        // The spinner state has to reach the UI too, not just the figure.
-        if (e.PropertyName is nameof(HyperWhisperCloudManager.IsFetchingCredits)
-            or nameof(HyperWhisperCloudManager.Credits))
-        {
-            CreditsChanged?.Invoke(this, EventArgs.Empty);
-        }
-    }
-
-    /// <summary>
-    /// The manager is a process-lifetime singleton, so a handler left attached
-    /// outlives the onboarding window.
-    /// </summary>
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _disposed = true;
-        _manager.CreditsUpdated -= OnCreditsUpdated;
-        _manager.PropertyChanged -= OnManagerPropertyChanged;
-    }
-}
 
 // =============================================================================
 // Provider keys
@@ -1178,8 +1054,6 @@ public static class OnboardingLiveDependencies
             parakeetModels,
             ModelDownloadService.Instance);
 
-        var license = new LiveOnboardingLicenseGateway(LicenseManager.Instance);
-        var credits = new LiveOnboardingCreditsGateway(HyperWhisperCloudManager.Instance);
         var providerKeys = new LiveOnboardingProviderKeyGateway(
             ApiKeyService.Instance,
             CloudProviderHealthService.Instance);
@@ -1213,8 +1087,6 @@ public static class OnboardingLiveDependencies
         var flow = new OnboardingFlowViewModel(
             permissions,
             catalog,
-            license,
-            credits,
             providerKeys,
             audio,
             committer,
@@ -1228,7 +1100,7 @@ public static class OnboardingLiveDependencies
         // resolve a singleton.
         flow.ReadAutoPasteEnabled = () => SettingsService.Instance.AutoPasteEnabled;
 
-        return new LiveOnboarding(flow, new IDisposable[] { audio, recorder, deviceService, credits, catalog });
+        return new LiveOnboarding(flow, new IDisposable[] { audio, recorder, deviceService, catalog });
     }
 
     /// <summary>

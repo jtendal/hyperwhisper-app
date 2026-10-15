@@ -54,11 +54,6 @@ public partial class StreamingSettingsPage : Page
         FastFormattingCheckbox.IsChecked = _settings.StreamingFastFormatting;
 
         // Catalog-driven, so a third live vendor needs no edit here or in the XAML.
-        CloudTierBox.ItemsSource = CloudSttCatalog.Shared
-            .StreamingCloudTierEntries()
-            .Select(entry => new CloudTierChoice(entry.Id, TierLabel(entry.Id)))
-            .ToList();
-        CloudTierBox.SelectedValue = _settings.StreamingCloudTier;
 
         _isInitializing = false;
         UpdateStreamingOptionsVisibility();
@@ -203,9 +198,6 @@ public partial class StreamingSettingsPage : Page
         DeepgramPanel.Visibility = provider == StreamingTranscriptionProvider.Deepgram
             ? Visibility.Visible
             : Visibility.Collapsed;
-        HyperWhisperCloudPanel.Visibility = provider == StreamingTranscriptionProvider.HyperWhisperCloud
-            ? Visibility.Visible
-            : Visibility.Collapsed;
 
         ProviderStatusText.Text = provider switch
         {
@@ -287,22 +279,6 @@ public partial class StreamingSettingsPage : Page
         VocabularyWarningPanel.Visibility = Visibility.Collapsed;
     }
 
-    private void CloudTierBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_isInitializing) return;
-
-        if (CloudTierBox.SelectedValue is string tier)
-        {
-            _settings.StreamingCloudTier = tier;
-            // Each live tier declares its own language set.
-            RefreshLanguageOptions();
-            // The Deepgram tier drops vocabulary in auto-detect and the Gemini tier
-            // does not, so the warning below the picker changes with this selection.
-            UpdateVocabularyWarning();
-            LoggingService.Info($"StreamingSettingsPage: Streaming cloud tier set to {tier}");
-        }
-    }
-
     /// <summary>
     /// The row label is the tier's own catalog name — "ElevenLabs Scribe v2".
     ///
@@ -313,10 +289,6 @@ public partial class StreamingSettingsPage : Page
     /// chooses a TIER (one live upstream route), not a company, so it draws the
     /// entry's <c>displayName</c> rather than the vendor group's.
     /// </summary>
-    private static string TierLabel(string tierId)
-        => CloudSttCatalog.Shared.GetById(tierId)?.DisplayName ?? tierId;
-
-    private sealed record CloudTierChoice(string Id, string Label);
 
     /// <summary>
     /// Binds the language picker to the selected provider's own language set and

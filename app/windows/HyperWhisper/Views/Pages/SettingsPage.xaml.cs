@@ -60,7 +60,7 @@ public partial class SettingsPage : Page
             "Appearance" => new AppearanceSettingsPage(),
             "Sound" => new SoundSettingsPage(),
             // "License" / "Credits" are legacy aliases for the unified Cloud panel.
-            "Cloud" or "License" or "Credits" => new CloudAccountSettingsPage(),
+
             "Storage" => new StorageSettingsPage(),
             "Output" => new OutputSettingsPage(),
             "LocalApi" => new LocalApiSettingsPage(),

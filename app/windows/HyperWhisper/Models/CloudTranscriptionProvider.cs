@@ -81,6 +81,11 @@ public enum CloudTranscriptionProvider
 /// </summary>
 public static class CloudTranscriptionProviderExtensions
 {
+    // Preserve legacy enum values for imports; hosted relay providers are unavailable.
+    public static bool IsAvailable(this CloudTranscriptionProvider provider) => provider is not
+        (CloudTranscriptionProvider.None or CloudTranscriptionProvider.HyperWhisperCloud
+        or CloudTranscriptionProvider.MicrosoftAzureSpeech or CloudTranscriptionProvider.GoogleSpeech);
+
     /// <summary>
     /// Gets the display name for UI presentation.
     /// </summary>

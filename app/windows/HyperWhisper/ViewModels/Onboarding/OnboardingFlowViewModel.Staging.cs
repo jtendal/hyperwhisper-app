@@ -34,13 +34,6 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
                     0,
                     null),
 
-                OnboardingSourceKind.HyperWhisperCloud => new OnboardingStagedSource(
-                    OnboardingSourceKind.HyperWhisperCloud,
-                    "cloud",
-                    "hyperwhisper",
-                    1,
-                    CloudAccuracyTier.ElevenLabsScribeV2.ToStorageValue()),
-
                 // Post-processing off by default so first run never fails on a
                 // missing post-processing key.
                 OnboardingSourceKind.YourProvider => new OnboardingStagedSource(

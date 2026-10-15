@@ -1,5 +1,6 @@
 openapi: 3.0.3
 info:
+  # Windows fork: HyperWhisper Cloud is removed. Select local models or supply your own provider keys.
   title: HyperWhisper Local API
   description: |
     HTTP API exposed by HyperWhisper.app on `127.0.0.1` when the user enables

@@ -11,7 +11,6 @@
     <InternalsVisibleTo Include="HyperWhisper.Application.Tests" />
     <ProjectReference Include="..\HyperWhisper.Platform.Abstractions\HyperWhisper.Platform.Abstractions.csproj" />
     <ProjectReference Include="..\HyperWhisper.AudioNormalization\HyperWhisper.AudioNormalization.csproj" />
-    <ProjectReference Include="..\HyperWhisper.CloudAccount\HyperWhisper.CloudAccount.csproj" />
     <ProjectReference Include="..\HyperWhisper.FileTranscription\HyperWhisper.FileTranscription.csproj" />
     <ProjectReference Include="..\HyperWhisper.Diagnostics\HyperWhisper.Diagnostics.csproj" />
     <ProjectReference Include="..\HyperWhisper.ModelManagement\HyperWhisper.ModelManagement.csproj" />

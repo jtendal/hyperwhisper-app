@@ -92,17 +92,13 @@
                         <TextBlock Text="{loc:Loc mode.editor.field.source}" FontSize="13"
                                    Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,4"/>
                         <Border Style="{StaticResource SegmentedControlBorderStyle}">
-                            <UniformGrid Rows="1" Columns="3">
+                            <UniformGrid Rows="1" Columns="2">
                                 <RadioButton x:Name="SourceOnDeviceSegment" GroupName="TranscriptionSource"
                                              Style="{StaticResource SegmentedRadioButtonStyle}"
                                              Tag="ondevice"
                                              Content="{loc:Loc mode.editor.source.onDevice}"
                                              Checked="SourceSegment_Checked"/>
-                                <RadioButton x:Name="SourceHwCloudSegment" GroupName="TranscriptionSource"
-                                             Style="{StaticResource SegmentedRadioButtonStyle}"
-                                             Tag="hwcloud"
-                                             Content="{loc:Loc mode.editor.source.hyperwhisperCloud}"
-                                             Checked="SourceSegment_Checked"/>
+
                                 <RadioButton x:Name="SourceYourProviderSegment" GroupName="TranscriptionSource"
                                              Style="{StaticResource SegmentedRadioButtonStyle}"
                                              Tag="yourprovider"
@@ -145,8 +141,7 @@
                                   BorderBrush="{DynamicResource BorderBrush}"
                                   Padding="10,8"
                                   SelectionChanged="CloudProviderCombo_SelectionChanged">
-                            <ComboBoxItem Content="{loc:Loc provider.hyperwhisper}" Tag="hyperwhisper"
-                                          ToolTip="{loc:Loc mode.editor.provider.hyperwhisper.tooltip}"/>
+
                             <ComboBoxItem Content="{loc:Loc provider.openai}" Tag="openai"
                                           ToolTip="{loc:Loc mode.editor.provider.openai.tooltip}"/>
                             <ComboBoxItem Content="{loc:Loc provider.groq}" Tag="groq"
@@ -175,54 +170,6 @@
                     </StackPanel>
 
                     <!-- HyperWhisper Cloud Engine (the accuracy tier, relabeled "Engine") -->
-                    <StackPanel x:Name="CloudAccuracyPanel" Visibility="Collapsed" Margin="0,0,0,16">
-                        <TextBlock Text="{loc:Loc mode.editor.field.provider}" FontSize="13"
-                                   Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,4"/>
-                        <ComboBox x:Name="CloudAccuracyCombo"
-                                  Background="{DynamicResource InputBackgroundBrush}"
-                                  Foreground="{DynamicResource TextPrimaryBrush}"
-                                  BorderBrush="{DynamicResource BorderBrush}"
-                                  Padding="10,8"
-                                  SelectionChanged="CloudAccuracyCombo_SelectionChanged">
-                            <!-- Rows are built in code from the shared catalog's vendor
-                                 groups (LoadCloudTierProviders). Company names are proper
-                                 nouns, so they are not localized, and building them here
-                                 keeps the list identical to the macOS one. -->
-                        </ComboBox>
-                        <!-- Green-dot credits/min caption (matches macOS) -->
-                        <StackPanel x:Name="CloudAccuracyCreditsPanel" Orientation="Horizontal" Margin="0,4,0,0" Visibility="Collapsed">
-                            <Ellipse Width="4" Height="4" Fill="{DynamicResource SuccessBrush}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <TextBlock x:Name="CloudAccuracyCreditsText" FontSize="11"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
-                        </StackPanel>
-                        <TextBlock x:Name="CloudAccuracyDescText" FontSize="11"
-                                   Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,4,0,0"/>
-
-                        <!-- Model picker for the selected HyperWhisper Cloud provider tier.
-                             Populated from the catalog's models[] for the chosen tier. -->
-                        <StackPanel x:Name="CloudTierModelPanel" Margin="0,12,0,0">
-                            <TextBlock Text="{loc:Loc mode.editor.field.cloudModel}" FontSize="13"
-                                       Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,4"/>
-                            <ComboBox x:Name="CloudTierModelCombo"
-                                      Background="{DynamicResource InputBackgroundBrush}"
-                                      Foreground="{DynamicResource TextPrimaryBrush}"
-                                      BorderBrush="{DynamicResource BorderBrush}"
-                                      Padding="10,8"
-                                      SelectionChanged="CloudTierModelCombo_SelectionChanged"/>
-                            <TextBlock x:Name="CloudTierModelDescText" FontSize="11"
-                                       Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,4,0,0"/>
-                        </StackPanel>
-
-                        <!-- Medical domain toggle — visible only for AssemblyAI (Deepgram
-                             medical is selected via the nova-3-medical model instead). -->
-                        <CheckBox x:Name="MedicalDomainCheck"
-                                  Content="{loc:Loc mode.editor.cloudDomain.medical}"
-                                  Foreground="{DynamicResource TextPrimaryBrush}"
-                                  Margin="0,12,0,0"
-                                  Visibility="Collapsed"
-                                  Checked="MedicalDomainCheck_Changed"
-                                  Unchecked="MedicalDomainCheck_Changed"/>
-                    </StackPanel>
 
                     <!-- Cloud Model Selection (shown when cloud selected) -->
                     <StackPanel x:Name="CloudModelPanel" Visibility="Collapsed" Margin="0,0,0,16">
@@ -400,17 +347,13 @@
                             <TextBlock Text="{loc:Loc mode.editor.field.source}" FontSize="13"
                                        Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,4"/>
                             <Border Style="{StaticResource SegmentedControlBorderStyle}">
-                                <UniformGrid Rows="1" Columns="3">
+                                <UniformGrid Rows="1" Columns="2">
                                     <RadioButton x:Name="PpSourceOnDeviceSegment" GroupName="PostProcessingSource"
                                                  Style="{StaticResource SegmentedRadioButtonStyle}"
                                                  Tag="ondevice"
                                                  Content="{loc:Loc mode.editor.source.onDevice}"
                                                  Checked="PpSourceSegment_Checked"/>
-                                    <RadioButton x:Name="PpSourceHwCloudSegment" GroupName="PostProcessingSource"
-                                                 Style="{StaticResource SegmentedRadioButtonStyle}"
-                                                 Tag="hwcloud"
-                                                 Content="{loc:Loc mode.editor.source.hyperwhisperCloud}"
-                                                 Checked="PpSourceSegment_Checked"/>
+
                                     <RadioButton x:Name="PpSourceYourProviderSegment" GroupName="PostProcessingSource"
                                                  Style="{StaticResource SegmentedRadioButtonStyle}"
                                                  Tag="yourprovider"
@@ -432,7 +375,7 @@
                                       BorderBrush="{DynamicResource BorderBrush}"
                                       Padding="10,8"
                                       SelectionChanged="PostProcessingProviderCombo_SelectionChanged">
-                                <ComboBoxItem Content="{loc:Loc provider.hyperwhisper}" Tag="hyperwhispercloud"/>
+
                                 <ComboBoxItem Content="{loc:Loc provider.openai}" Tag="openai"/>
                                 <ComboBoxItem Content="{loc:Loc provider.anthropic}" Tag="anthropic"/>
                                 <ComboBoxItem Content="{loc:Loc provider.gemini}" Tag="gemini"/>
@@ -449,23 +392,6 @@
                              (CloudPpCatalog); Model lists the selected engine's enabled
                              models. Persisted as the provider-qualified "<engineId>:<modelId>"
                              storage key. Shown only for the HyperWhisper Cloud source. -->
-                        <StackPanel x:Name="CloudPostProcessingModelPanel" Visibility="Collapsed" Margin="0,0,0,16">
-                            <TextBlock Text="{loc:Loc mode.editor.field.provider}" FontSize="13"
-                                       Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,4"/>
-                            <ComboBox x:Name="CloudPostProcessingEngineCombo"
-                                      Background="{DynamicResource InputBackgroundBrush}"
-                                      Foreground="{DynamicResource TextPrimaryBrush}"
-                                      BorderBrush="{DynamicResource BorderBrush}"
-                                      Padding="10,8"
-                                      SelectionChanged="CloudPostProcessingEngineCombo_SelectionChanged"/>
-                            <TextBlock Text="{loc:Loc mode.editor.field.cloudModel}" FontSize="13"
-                                       Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,12,0,4"/>
-                            <ComboBox x:Name="CloudPostProcessingModelCombo"
-                                      Background="{DynamicResource InputBackgroundBrush}"
-                                      Foreground="{DynamicResource TextPrimaryBrush}"
-                                      BorderBrush="{DynamicResource BorderBrush}"
-                                      Padding="10,8"/>
-                        </StackPanel>
 
                         <!-- Model (hidden for HyperWhisper Cloud) -->
                         <StackPanel x:Name="PostProcessingModelPanel" Margin="0,0,0,16">

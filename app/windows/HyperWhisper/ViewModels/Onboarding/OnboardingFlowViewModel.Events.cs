@@ -31,8 +31,6 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
 
     private void OnShortcutChanged(object? sender, EventArgs e) => ApplyShortcutState();
 
-    private void OnCreditsChanged(object? sender, EventArgs e) => ApplyCredits();
-
     private void OnDevicesChanged(object? sender, EventArgs e)
     {
         // Availability is step-independent: the Done step's summary reads it too.

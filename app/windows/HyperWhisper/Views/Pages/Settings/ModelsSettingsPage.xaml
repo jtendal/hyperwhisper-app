@@ -144,25 +144,7 @@
                                 </Button>
                             </StackPanel>
                         </Border>
-                        <Border x:Name="CloudAvailableFilterChip"
-                                Background="{DynamicResource BadgeGrayBackgroundBrush}"
-                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-                                CornerRadius="11" Padding="8,2" Margin="4,0,0,0" Visibility="Collapsed">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="On HyperWhisper Cloud" FontSize="11"
-                                           VerticalAlignment="Center"
-                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                <Button Margin="6,0,0,0" Padding="0" Width="14" Height="14"
-                                        Background="Transparent" BorderThickness="0"
-                                        Foreground="{DynamicResource TextSecondaryBrush}"
-                                        Click="CloudAvailableFilterChip_Clear" ToolTip="Clear filter">
-                                    <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="9"
-                                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                                               TextAlignment="Center"
-                                               LineStackingStrategy="BlockLineHeight" LineHeight="9"/>
-                                </Button>
-                            </StackPanel>
-                        </Border>
+
                     </StackPanel>
 
                     <!-- Filter dropdown: checkable Type / Location / Features (mirrors macOS). -->
@@ -190,8 +172,7 @@
                                 <MenuItem Header="Features" IsEnabled="False"/>
                                 <MenuItem x:Name="VocabFilterMenuItem" Header="Supports custom vocabulary"
                                           IsCheckable="True" Click="FeatureFilter_Changed"/>
-                                <MenuItem x:Name="CloudAvailableFilterMenuItem" Header="Available on HyperWhisper Cloud"
-                                          IsCheckable="True" Click="FeatureFilter_Changed"/>
+
                             </ContextMenu>
                         </Button.ContextMenu>
                     </Button>

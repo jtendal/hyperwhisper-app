@@ -572,6 +572,7 @@ public static class CloudTranscriptionModels
             .Concat(Grok)
             .Concat(MicrosoftAzureSpeech)
             .Concat(GoogleSpeech)
+            .Where(model => model.Provider.IsAvailable())
             .ToArray();
 
     /// <summary>

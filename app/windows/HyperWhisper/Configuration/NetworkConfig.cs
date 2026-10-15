@@ -17,40 +17,6 @@ namespace HyperWhisper.Configuration;
 /// </summary>
 public static class NetworkConfig
 {
-    // =========================================================================
-    // HYPERWHISPER CLOUD ENDPOINTS
-    // =========================================================================
-
-    /// <summary>
-    /// Base URL for HyperWhisper Cloud transcription service.
-    /// Switches between dev/prod based on DEBUG compilation symbol.
-    /// </summary>
-    public static string HyperWhisperCloudBaseUrl =>
-#if DEBUG
-        "https://transcribe-dev-v2.hyperwhisper.com";
-#else
-        "https://transcribe-prod-v2.hyperwhisper.com";
-#endif
-
-    /// <summary>
-    /// Usage/credits endpoint URL.
-    /// GET /usage - Fetch credit balance.
-    /// </summary>
-    public static string UsageEndpoint => $"{HyperWhisperCloudBaseUrl}/usage";
-
-    /// <summary>
-    /// Post-processing endpoint URL.
-    /// POST /post-process - AI text correction.
-    /// </summary>
-    public static string PostProcessEndpoint => $"{HyperWhisperCloudBaseUrl}/post-process";
-
-    // =========================================================================
-    // ENVIRONMENT DETECTION
-    // =========================================================================
-
-    /// <summary>
-    /// Whether the app is running in development mode.
-    /// </summary>
     public static bool IsDevelopment =>
 #if DEBUG
         true;

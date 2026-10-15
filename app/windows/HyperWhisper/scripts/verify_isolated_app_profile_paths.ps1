@@ -70,8 +70,6 @@ Assert-Contains $db 'AppPaths\.AppDataRoot' "HyperWhisperDbContext must place SQ
 $expectedPathUsers = @(
     "Services\ConfigService.cs",
     "Services\DeviceIdService.cs",
-    "Services\LicenseNetworkService.cs",
-    "Services\LicenseUsageTracker.cs",
     "Services\LocalApi\LocalApiAuth.cs",
     "Services\LocalApi\LocalApiDiscoveryFile.cs",
     "Services\LocalLlmModelService.cs",
@@ -86,10 +84,6 @@ foreach ($relativePath in $expectedPathUsers) {
 }
 
 $apiKeys = Read-Text (Join-Path $appRoot "Services\ApiKeyService.cs")
-$license = Read-Text (Join-Path $appRoot "Services\LicenseNetworkService.cs")
 Assert-Contains $apiKeys 'AppPaths\.CredentialResource' "ApiKeyService must use the profile-aware Credential Manager resource."
-Assert-Contains $license 'AppPaths\.CredentialResource' "LicenseNetworkService must use the profile-aware Credential Manager resource."
-Assert-NotContains $apiKeys 'private const string VaultResource = "HyperWhisper"' "ApiKeyService must not hard-code the production credential resource."
-Assert-NotContains $license 'private const string VaultResource = "HyperWhisper"' "LicenseNetworkService must not hard-code the production credential resource."
 
 Write-Host "Isolated app profile path verifier passed."

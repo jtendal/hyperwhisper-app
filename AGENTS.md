@@ -27,4 +27,6 @@ Regenerate with `shared-core-rs/build-bindings.ps1` and check with
 When changing settings, modes or vocabulary, update the shared backup schema
 and mappings together. Preserve import compatibility for existing backups.
 Never bypass hosted Cloud authentication, licensing or server-side entitlement.
-Optional upstream services are not deployed from this repository.
+HyperWhisper Cloud is removed from the application. Keep new defaults local,
+reject legacy hosted-provider requests, and preserve existing backup fields.
+Third-party providers use the user's own API keys.

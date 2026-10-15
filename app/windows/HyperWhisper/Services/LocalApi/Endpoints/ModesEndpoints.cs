@@ -605,6 +605,9 @@ internal static class ModesEndpoints
 
     private static string? ValidatePostProcessingSelection(Mode mode)
     {
+        if (LocalModeModel.IsCloud(mode) && !CloudTranscriptionProviderExtensions.FromModeCloudProvider(mode.CloudProvider).IsAvailable())
+            return "Select a local model or a supported provider using your own API key.";
+
         var providerValue = mode.PostProcessingProvider?.Trim();
         if (string.IsNullOrEmpty(providerValue))
         {
@@ -624,10 +627,7 @@ internal static class ModesEndpoints
             return $"Unknown post-processing provider '{providerValue}'.";
         }
 
-        if (provider == PostProcessingProvider.HyperWhisperCloud)
-        {
-            return null;
-        }
+        if (provider == PostProcessingProvider.HyperWhisperCloud) return "HyperWhisper Cloud is no longer available. Select another post-processing provider.";
 
         if (provider == PostProcessingProvider.LocalLlm && !PlatformHelper.SupportsLocalLlmPostProcessing)
         {

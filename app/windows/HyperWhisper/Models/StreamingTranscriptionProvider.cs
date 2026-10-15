@@ -58,15 +58,16 @@ public static class StreamingTranscriptionProviderExtensions
     };
 
     public static bool IsValidStorageValue(string? value) =>
-        value is "hyperwhisperCloud" or "deepgram" or "elevenLabs" or "openAI" or "xai" or "geminiTranscribe";
+        value is "deepgram" or "elevenLabs" or "openAI" or "xai" or "geminiTranscribe";
 
     public static StreamingTranscriptionProvider FromStorageValue(string? value) => value switch
     {
+        "hyperwhisperCloud" => StreamingTranscriptionProvider.HyperWhisperCloud,
         "deepgram" => StreamingTranscriptionProvider.Deepgram,
         "elevenLabs" => StreamingTranscriptionProvider.ElevenLabs,
         "openAI" => StreamingTranscriptionProvider.OpenAI,
         "xai" => StreamingTranscriptionProvider.Xai,
         "geminiTranscribe" => StreamingTranscriptionProvider.GeminiTranscribe,
-        _ => StreamingTranscriptionProvider.HyperWhisperCloud
+        _ => StreamingTranscriptionProvider.Deepgram
     };
 }

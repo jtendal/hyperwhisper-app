@@ -23,11 +23,7 @@ mod names;
 // apply to this module: it is on the picker's build path on every head, and the
 // workspace release profile sets `panic = "abort"`, so an out-of-range index
 // here is the settings window failing to open rather than a wrong list.
-#[deny(
-    clippy::indexing_slicing,
-    clippy::unwrap_used,
-    clippy::expect_used
-)]
+#[deny(clippy::indexing_slicing, clippy::unwrap_used, clippy::expect_used)]
 mod language;
 // The one canonical first-run mode seed, shared by all three heads (#285).
 //
@@ -36,11 +32,7 @@ mod language;
 // unwrap here is the app failing to start on a brand-new install — the one
 // moment with no prior state to recover from. The module's own docs explain the
 // fallback-plus-pinning-test pattern that replaces unwrapping.
-#[deny(
-    clippy::indexing_slicing,
-    clippy::unwrap_used,
-    clippy::expect_used
-)]
+#[deny(clippy::indexing_slicing, clippy::unwrap_used, clippy::expect_used)]
 mod mode_seed;
 
 pub use models::{CatalogError, Entry, Kind, LanguageSupport, ModelsCatalog};
@@ -64,9 +56,7 @@ pub use app_type::{
 };
 
 pub use mode_seed::{
-    mode_seed_default, ModeSeed, CLOUD_ACCURACY_TIER, CLOUD_POST_PROCESSING_ENGINE,
-    FALLBACK_CLOUD_POST_PROCESSING_MODEL, FALLBACK_CLOUD_TRANSCRIPTION_MODEL, HYPER_MODE_ID,
-    HYPER_MODE_NAME, HYPER_MODE_PRESET, POST_PROCESSING_PROVIDER,
+    mode_seed_default, ModeSeed, HYPER_MODE_ID, HYPER_MODE_NAME, HYPER_MODE_PRESET,
 };
 
 pub use language::{

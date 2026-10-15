@@ -321,14 +321,10 @@ public partial class MainViewModel : ViewModelBase
     /// <c>MainWindow.Activated</c>; pair with <see cref="StopCloudKeepalive"/>
     /// on <c>MainWindow.Deactivated</c>.
     /// </summary>
-    public void StartCloudKeepalive()
-        => _transcriptionOrchestrator.StartKeepalive(() => SelectedMode);
 
     /// <summary>
     /// Stops the foreground HyperWhisper Cloud keepalive ticker.
     /// </summary>
-    public void StopCloudKeepalive()
-        => _transcriptionOrchestrator.StopKeepalive();
 
     private void OnSettingsChanged(object? sender, EventArgs e)
     {
@@ -1696,7 +1692,7 @@ public partial class MainViewModel : ViewModelBase
         switch (e.Name)
         {
             case "toggle":
-                _transcriptionOrchestrator.PrewarmCloudConnectionIfActive(SelectedMode);
+
                 if (IsStreamingActive())
                 {
                     ShowErrorToastRequested?.Invoke(this, new ErrorToastEventArgs(
@@ -1798,7 +1794,7 @@ public partial class MainViewModel : ViewModelBase
         // device/OCR/audio failure becomes a logged error and the monitor returns to idle.
         try
         {
-            _transcriptionOrchestrator.PrewarmCloudConnectionIfActive(SelectedMode);
+
             if (IsStreamingActive())
             {
                 _pushToTalkMonitor.ResetToIdle();
@@ -2175,7 +2171,6 @@ public partial class MainViewModel : ViewModelBase
         _activeRecordingMode = null;
     }
 
-
     private void RestoreAudioEnvironment()
     {
         var state = _audioEnvironmentState;
@@ -2209,7 +2204,6 @@ public partial class MainViewModel : ViewModelBase
     {
         MicrophoneKeepWarmService.Instance.ResumeAfterRecording(SelectedAudioDevice?.DeviceNumber);
     }
-
 
     [RelayCommand]
     public async Task StopRecordingAndTranscribeAsync()
@@ -2553,7 +2547,7 @@ public partial class MainViewModel : ViewModelBase
                     ShowErrorToastRequested?.Invoke(this, new ErrorToastEventArgs(
                         txEx.GetUserMessage(),
                         showSettingsButton: showSettings || isCloudAccountError,
-                        settingsSection: isCloudAccountError ? "Cloud" : null,
+                        settingsSection: null,
                         openApiKeysManager: showSettings));
                     StatusText = Loc.S("status.failed", ex.Message);
                 }

@@ -17,7 +17,7 @@ internal static class HealthEndpoints
 {
     internal static IReadOnlyList<CloudTranscriptionProvider> TranscriptionProviders { get; } =
         Enum.GetValues<CloudTranscriptionProvider>()
-            .Where(provider => provider != CloudTranscriptionProvider.None)
+            .Where(provider => provider.IsAvailable())
             .ToArray();
 
     public static void Map(IEndpointRouteBuilder app, LocalApiServer server)

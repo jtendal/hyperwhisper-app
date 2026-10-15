@@ -7,7 +7,7 @@ HyperWhisper Windows — C# 12 + WPF (XAML) app on .NET 10, Windows 10+. Audio v
 - `HyperWhisper.csproj` — root project (run from here)
 - `Views/Windows/` + `Views/Pages/` — WPF XAML + code-behind
 - `ViewModels/` — MVVM view models
-- `Services/` — `TranscriptionService`, `AudioRecorderService`, `AudioDeviceService`, `WhisperModelService`, `LoggingService`, `HyperWhisperCloudService`, `HyperWhisperRoutedTranscriptionClient`
+- `Services/` — `TranscriptionService`, `AudioRecorderService`, `AudioDeviceService`, `WhisperModelService`, `LoggingService`
 - `Models/` — `WhisperModelInfo`, `CloudTranscriptionProvider`, `CloudTranscriptionModel`
 - `Data/Entities/` — EF Core entities (modifying these requires a migration; see below)
 - `Migrations/` — EF Core migrations + `HyperWhisperDbContextModelSnapshot.cs`

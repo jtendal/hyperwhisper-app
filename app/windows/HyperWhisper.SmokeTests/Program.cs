@@ -105,6 +105,25 @@ internal static class Program
             // FFI touch FIRST: the first call into the native DLL runs the UniFFI
             // contract-version + checksum handshake — binding↔DLL drift fails
             // here, before anything else can produce a confusing error.
+            Run("removed hosted providers fail before credential lookup", () =>
+            {
+                using var factory = new TranscriptionProviderFactory(
+                    _ => throw new InvalidOperationException("Credential lookup must not run"), null);
+                foreach (var provider in new[] { CloudTranscriptionProvider.HyperWhisperCloud,
+                    CloudTranscriptionProvider.MicrosoftAzureSpeech, CloudTranscriptionProvider.GoogleSpeech })
+                {
+                    try { factory.GetConfiguredCloudProvider(provider); throw new Exception("Retired provider was accepted"); }
+                    catch (TranscriptionException ex) { Assert(ex.Code == TranscriptionErrorCode.ApiKeyMissing, ex.Message); }
+                }
+            });
+            Run("onboarding offers only local models and own API providers", () =>
+            {
+                var h = new OnboardingHarness();
+                Assert(h.Flow.SourceOptions.All(row => row.Kind != OnboardingSourceKind.HyperWhisperCloud), "Hosted source is visible");
+                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
+                Assert(h.Flow.SelectedSource is null, "Programmatic selection accepted the removed source");
+                Assert(!StreamingTranscriptionProviderExtensions.IsValidStorageValue("hyperwhisperCloud"), "Hosted live provider is selectable");
+            });
             Run("ffi checksum touch (CloudSttCreditsPerMinute)", () =>
             {
                 var credits = HyperwhisperCoreMethods.CloudSttCreditsPerMinute("balanced");
@@ -3802,31 +3821,6 @@ internal static class Program
             // key got it too, because the branch tested the status and nothing
             // else — so the first thing the page ever said about the customer's
             // account was untrue, and it pointed at billing instead of the typo.
-            Run("the lapsed-licence banner needs a licence that lapsed — issue #511", () =>
-            {
-                // No stored key means no licence has ever worked on this device:
-                // LicenseNetworkService persists a key only after it validates.
-                foreach (var status in Enum.GetValues<LicenseStatus>())
-                {
-                    Assert(!LicenseManager.ShouldExplainLapsedLicense(status, hasStoredKey: false),
-                        $"{status} with no stored key claimed a licence had lapsed on a device that "
-                        + "has never had one");
-                }
-
-                // With a stored key the banner is right, and it is the whole point
-                // of the branch — a returning customer must not get a fresh-install
-                // screen with no explanation.
-                Assert(LicenseManager.ShouldExplainLapsedLicense(LicenseStatus.Expired, hasStoredKey: true),
-                    "a stored key that expired must still be explained");
-                Assert(LicenseManager.ShouldExplainLapsedLicense(LicenseStatus.Invalid, hasStoredKey: true),
-                    "a stored key that was revoked must still be explained");
-
-                // And a working or unlicensed device is not a lapse either way.
-                Assert(!LicenseManager.ShouldExplainLapsedLicense(LicenseStatus.Active, hasStoredKey: true),
-                    "an active licence must not be reported as lapsed");
-                Assert(!LicenseManager.ShouldExplainLapsedLicense(LicenseStatus.Trial, hasStoredKey: true),
-                    "a device back in trial must not be reported as lapsed");
-            });
 
             Run("Deepgram parses every message shape of its \"channel\" field", () =>
             {
@@ -6960,7 +6954,7 @@ internal static class Program
 
                 foreach (var provider in new[]
                          {
-                             StreamingTranscriptionProvider.HyperWhisperCloud,
+
                              StreamingTranscriptionProvider.ElevenLabs,
                              StreamingTranscriptionProvider.OpenAI,
                              StreamingTranscriptionProvider.Xai,
@@ -7128,7 +7122,7 @@ internal static class Program
                 // resets anything it rejects to hyperwhisperCloud, so a member
                 // missing from it makes the user's selection silently revert on the
                 // next save. Nothing tested this before; walk the whole enum.
-                foreach (var provider in Enum.GetValues<StreamingTranscriptionProvider>())
+                foreach (var provider in Enum.GetValues<StreamingTranscriptionProvider>().Where(p => p != StreamingTranscriptionProvider.HyperWhisperCloud))
                 {
                     var storage = provider.StorageValue();
                     Assert(!string.IsNullOrWhiteSpace(storage), $"{provider}: empty storage value");
@@ -7439,7 +7433,7 @@ internal static class Program
             {
                 var expected = new (StreamingTranscriptionProvider Provider, string Label, int SampleRate, bool Vocabulary)[]
                 {
-                    (StreamingTranscriptionProvider.HyperWhisperCloud, "HyperWhisper Cloud (Streaming)", 16000, true),
+
                     (StreamingTranscriptionProvider.Deepgram, "Deepgram (Streaming)", 16000, true),
                     (StreamingTranscriptionProvider.ElevenLabs, "ElevenLabs (Streaming)", 16000, false),
                     (StreamingTranscriptionProvider.OpenAI, "OpenAI (Streaming)", 24000, false),
@@ -7513,16 +7507,6 @@ internal static class Program
                         $"expected no language= under auto, got '{auto}'");
                 }
 
-                using (var cloud = LiveStrategy(StreamingTranscriptionProvider.HyperWhisperCloud))
-                {
-                    var url = cloud.BuildWebSocketUri(LiveConfig())!.AbsoluteUri;
-                    Assert(url.StartsWith(
-                            "wss://transcribe-prod-v2.hyperwhisper.com/ws/streaming-deepgram?license_key=smoke-license-key",
-                            StringComparison.Ordinal),
-                        $"expected the production relay with the license key first, got '{url}'");
-                    Assert(url.Contains("language=en", StringComparison.Ordinal), $"expected language=en, got '{url}'");
-                }
-
                 using (var elevenLabs = LiveStrategy(StreamingTranscriptionProvider.ElevenLabs))
                 {
                     var url = elevenLabs.BuildWebSocketUri(LiveConfig())!.AbsoluteUri;
@@ -7575,7 +7559,7 @@ internal static class Program
                              StreamingTranscriptionProvider.ElevenLabs,
                              StreamingTranscriptionProvider.OpenAI,
                              StreamingTranscriptionProvider.Xai,
-                             StreamingTranscriptionProvider.HyperWhisperCloud,
+
                          })
                 {
                     var bare = new StreamingSessionConfig(null, null, "en", null, null, null, false, false);
@@ -7595,7 +7579,7 @@ internal static class Program
                          {
                              StreamingTranscriptionProvider.Deepgram,
                              StreamingTranscriptionProvider.Xai,
-                             StreamingTranscriptionProvider.HyperWhisperCloud,
+
                          })
                 {
                     using var strategy = LiveStrategy(provider);
@@ -7651,7 +7635,7 @@ internal static class Program
 
                 foreach (var (provider, frame) in new[]
                          {
-                             (StreamingTranscriptionProvider.HyperWhisperCloud, "{\"type\":\"stop\"}"),
+
                              (StreamingTranscriptionProvider.Xai, "{\"type\":\"audio.done\"}"),
                          })
                 {
@@ -7692,34 +7676,6 @@ internal static class Program
 
             Run("Every streaming provider's parser reaches this head's event type", () =>
             {
-                using (var cloud = LiveStrategy(StreamingTranscriptionProvider.HyperWhisperCloud))
-                {
-                    Assert(cloud.ParseMessage("{\"type\":\"ready\",\"sessionId\":\"s-1\"}")
-                            is StreamingProviderEvent.SessionStarted { SessionId: "s-1" },
-                        "expected ready to carry the session id");
-                    Assert(cloud.ParseMessage("{\"type\":\"transcript\",\"text\":\"hi\",\"is_final\":true}")
-                            is StreamingProviderEvent.FinalTranscript { Text: "hi" },
-                        "expected a final transcript");
-                    Assert(cloud.ParseMessage("{\"type\":\"transcript\",\"text\":\"hi\"}")
-                            is StreamingProviderEvent.PartialTranscript { Text: "hi" },
-                        "expected a partial transcript");
-                    // BILLING DATA. The stop path waits on this frame rather than
-                    // closing on a timer precisely so it is not lost.
-                    Assert(cloud.ParseMessage(
-                            "{\"type\":\"session_complete\",\"duration_seconds\":12.5,\"credits_used\":3.25}")
-                            is StreamingProviderEvent.SessionComplete { DurationSeconds: 12.5, CreditsUsed: 3.25 },
-                        "expected session_complete to carry the duration and the credits");
-                    Assert(cloud.ParseMessage("{\"type\":\"warning\",\"message\":\"almost out\"}")
-                            is StreamingProviderEvent.Warning { Message: "almost out" },
-                        "expected a warning to stay a warning and never end the session");
-                    Assert(cloud.ParseMessage("{\"type\":\"error\",\"message\":\"Credit balance exhausted\"}")
-                            is StreamingProviderEvent.Error { Message: "Credit balance exhausted" },
-                        "expected the provider's own wording to survive, so the classifier can read it");
-                    // A frame that is not JSON must not end a recording in progress.
-                    Assert(cloud.ParseMessage("not json at all") is null, "expected junk to be ignored");
-                    Assert(cloud.ParseMessage("{\"type\":\"something_new\"}") is null,
-                        "expected an unknown frame type to be ignored");
-                }
 
                 using (var xai = LiveStrategy(StreamingTranscriptionProvider.Xai))
                 {
@@ -7789,7 +7745,7 @@ internal static class Program
                 // and AddSubProtocol validates its argument.
                 foreach (var provider in new[]
                          {
-                             StreamingTranscriptionProvider.HyperWhisperCloud,
+
                              StreamingTranscriptionProvider.Deepgram,
                              StreamingTranscriptionProvider.ElevenLabs,
                              StreamingTranscriptionProvider.OpenAI,
@@ -10026,86 +9982,6 @@ internal static class Program
             // {"valid":false,"error":"..."} shape for a lapsed license, a nonexistent key, AND a real
             // infrastructure fault, so the shape alone cannot decide this - only the server's own
             // `reason` field can. Mirrors macOS LicenseNetworkVerdictReportingTests.swift exactly.
-            Run("LicenseVerdictReason recognizes reason=not_entitled at 400 as an ordinary verdict", () =>
-            {
-                var body = System.Text.Encoding.UTF8.GetBytes(
-                    """{"valid":false,"error":"License is revoked","reason":"not_entitled"}""");
-                var reason = LicenseNetworkService.LicenseVerdictReason(400, body);
-                Assert(reason == LicenseNetworkService.NotEntitledReason,
-                    $"expected '{LicenseNetworkService.NotEntitledReason}', got '{reason ?? "<null>"}'");
-            });
-
-            Run("LicenseVerdictReason: reason alone (no other fields) is enough at 400", () =>
-            {
-                var body = System.Text.Encoding.UTF8.GetBytes("""{"reason":"not_entitled"}""");
-                var reason = LicenseNetworkService.LicenseVerdictReason(400, body);
-                Assert(reason == LicenseNetworkService.NotEntitledReason, $"got '{reason ?? "<null>"}'");
-            });
-
-            Run("LicenseVerdictReason: lookup_failed and bad_request are NOT an ordinary verdict", () =>
-            {
-                var lookupFailed = System.Text.Encoding.UTF8.GetBytes(
-                    """{"valid":false,"error":"Failed to validate with Polar","reason":"lookup_failed"}""");
-                var badRequest = System.Text.Encoding.UTF8.GetBytes(
-                    """{"valid":false,"error":"License key is required","reason":"bad_request"}""");
-                Assert(LicenseNetworkService.LicenseVerdictReason(400, lookupFailed) == "lookup_failed",
-                    "expected 'lookup_failed' returned verbatim");
-                Assert(LicenseNetworkService.LicenseVerdictReason(400, badRequest) == "bad_request",
-                    "expected 'bad_request' returned verbatim");
-            });
-
-            Run("LicenseVerdictReason: an unrecognised reason is returned verbatim but is not a verdict", () =>
-            {
-                var body = System.Text.Encoding.UTF8.GetBytes(
-                    """{"valid":false,"error":"...","reason":"quota_exceeded"}""");
-                var reason = LicenseNetworkService.LicenseVerdictReason(400, body);
-                Assert(reason == "quota_exceeded", $"got '{reason ?? "<null>"}'");
-                Assert(reason != LicenseNetworkService.NotEntitledReason,
-                    "an unrecognised reason must never equal the not-entitled constant");
-            });
-
-            Run("LicenseVerdictReason: a body with no reason field is not a verdict (must still be captured)", () =>
-            {
-                var noReason = System.Text.Encoding.UTF8.GetBytes(
-                    """{"valid":false,"error":"License is revoked"}""");
-                var validTrue = System.Text.Encoding.UTF8.GetBytes("""{"valid":true}""");
-                var emptyObject = System.Text.Encoding.UTF8.GetBytes("{}");
-                Assert(LicenseNetworkService.LicenseVerdictReason(400, noReason) == null,
-                    "expected null for a 400 body with no reason field");
-                Assert(LicenseNetworkService.LicenseVerdictReason(400, validTrue) == null,
-                    "expected null for valid:true with no reason field");
-                Assert(LicenseNetworkService.LicenseVerdictReason(400, emptyObject) == null,
-                    "expected null for an empty JSON object");
-            });
-
-            Run("LicenseVerdictReason: an empty body or an HTML captive-portal page is not a verdict", () =>
-            {
-                var html = System.Text.Encoding.UTF8.GetBytes(
-                    "<!DOCTYPE html><html><body><h1>Sign in to continue</h1></body></html>");
-                Assert(LicenseNetworkService.LicenseVerdictReason(400, System.Array.Empty<byte>()) == null,
-                    "expected null for an empty body");
-                Assert(LicenseNetworkService.LicenseVerdictReason(400, html) == null,
-                    "expected null for an undecodable HTML body");
-            });
-
-            Run("LicenseVerdictReason: non-object JSON and a non-string reason are not a verdict", () =>
-            {
-                var array = System.Text.Encoding.UTF8.GetBytes("[]");
-                var nonStringReason = System.Text.Encoding.UTF8.GetBytes("""{"valid":false,"reason":7}""");
-                Assert(LicenseNetworkService.LicenseVerdictReason(400, array) == null, "expected null for a JSON array");
-                Assert(LicenseNetworkService.LicenseVerdictReason(400, nonStringReason) == null,
-                    "expected null for a non-string reason value");
-            });
-
-            Run("LicenseVerdictReason: only status 400 is eligible - same body at 500 is not a verdict", () =>
-            {
-                var verdictBody = System.Text.Encoding.UTF8.GetBytes(
-                    """{"valid":false,"error":"License is revoked","reason":"not_entitled"}""");
-                Assert(LicenseNetworkService.LicenseVerdictReason(500, verdictBody) == null,
-                    "expected null - a 5xx never reaches this predicate as a terminal result, and even if it did, only 400 is the documented verdict status");
-                Assert(LicenseNetworkService.LicenseVerdictReason(401, verdictBody) == null, "expected null at 401");
-                Assert(LicenseNetworkService.LicenseVerdictReason(200, verdictBody) == null, "expected null at 200");
-            });
 
             RunAsync("a mid-session generationComplete keeps BOTH utterances and still sends audio_stream_end", async () =>
             {
@@ -10125,7 +10001,7 @@ internal static class Program
                 // whose 'complete' really is once-per-session must not be changed.
                 // The answer comes from the shared core (issue #281), so this walks
                 // the real provider enum rather than a hand-kept strategy list.
-                foreach (var provider in Enum.GetValues<StreamingTranscriptionProvider>())
+                foreach (var provider in Enum.GetValues<StreamingTranscriptionProvider>().Where(p => p != StreamingTranscriptionProvider.HyperWhisperCloud))
                 {
                     if (provider == StreamingTranscriptionProvider.GeminiTranscribe)
                     {
@@ -10210,159 +10086,6 @@ internal static class Program
                     $"the HyperWhisper Cloud sentinel is named '{sentinel?.DisplayName}'");
                 Assert(!CloudTranscriptionModels.All.Any(m => m.DisplayNameOverride != null),
                     "a real model set DisplayNameOverride - names belong in the catalog");
-            });
-
-            Run("AssemblyAI Dictation stays selected on the cloud send path", () =>
-            {
-                Assert(HyperWhisperCloudService.ResolveDictationModelId("assemblyAI", "dictation") == "dictation", "Dictation was replaced by the provider default");
-                Assert(HyperWhisperCloudService.ResolveDictationModelId("assemblyAI", null) == "universal-3-5-pro", "AssemblyAI default changed");
-                Assert(CloudTranscriptionModels.AssemblyAI.Any(model => model.Id == "dictation"), "BYOK Dictation is missing");
-                Assert(!CloudTranscriptionModels.AssemblyAI.Any(model => model.Id == "dictation-medical"), "Dictation gained Medical Mode");
-            });
-
-            Run("the HyperWhisper Cloud dictation model picker never offers a streaming-only model", () =>
-            {
-                // gemini-3.5-transcribe-live is WebSocket-only - it has no
-                // pre-recorded endpoint, so every dictation on it 400s. The catalog
-                // already carries `"streaming": true` on that model; the Mode
-                // editor's Model dropdown flat-mapped every model and ignored it.
-                var catalog = CloudSttCatalog.Shared;
-
-                var live = catalog.GetModel("geminiTranscribe", "gemini-3.5-transcribe-live");
-                Assert(live != null, "the catalog no longer carries gemini-3.5-transcribe-live");
-
-                var offered = catalog.ModelsForVendorKey("google").Select(entry => entry.Model.Id).ToArray();
-                Assert(!offered.Contains("gemini-3.5-transcribe-live"),
-                    $"a live-only model reached the dictation picker: {string.Join(", ", offered)}");
-                Assert(offered.Contains("gemini-3.5-transcribe"),
-                    $"the pre-recorded Google model must still be offered, got: {string.Join(", ", offered)}");
-
-                // REGRESSION GUARD (mirrors macOS's deepgramNova3StaysSelectableForDictation).
-                // The per-model `streaming` flag is NOT the filter, however much it
-                // reads like one: it means "HW Cloud routes this model live", and
-                // Deepgram carries it on nova-3-general and nova-3-medical, which
-                // are the DEFAULT pre-recorded dictation models. Filtering on it
-                // deletes the default dictation model from the picker - a worse bug
-                // than the one this test exists for. Both facts are pinned here so
-                // the flag cannot quietly become the filter again.
-                Assert(catalog.GetModel("deepgramNova3", "nova-3-general")!.Streaming,
-                    "nova-3-general lost its `streaming` flag - this guard no longer guards anything");
-                var deepgram = catalog.ModelsForVendorKey("deepgram").Select(entry => entry.Model.Id).ToArray();
-                Assert(deepgram.Contains("nova-3-general") && deepgram.Contains("nova-3-medical"),
-                    $"Deepgram's pre-recorded models must stay selectable for dictation, got: {string.Join(", ", deepgram)}");
-                Assert(deepgram.Length == catalog.ModelsForId("deepgramNova3").Count,
-                    "the dictation picker dropped a Deepgram model - only live-only ids may be filtered");
-
-                Assert(CloudSttCatalog.IsLiveOnlyModel("  GEMINI-3.5-TRANSCRIBE-LIVE  "),
-                    "live-only matching must be trimmed and case-insensitive, like every other catalog model lookup");
-                foreach (var notLiveOnly in new string?[] { null, "", "   ", "gemini-3.5-transcribe", "nova-3-general" })
-                {
-                    Assert(!CloudSttCatalog.IsLiveOnlyModel(notLiveOnly),
-                        $"'{notLiveOnly}' must not be treated as live-only");
-                }
-
-                // The SEND path has to reject it too: the picker no longer offers
-                // one, but a backup restore or a Local API write can still store it,
-                // and it IS a member of the tier so plain membership accepts it.
-                //
-                // Assert on HyperWhisperCloudService.ResolveDictationModelId - the
-                // method that actually produces the X-STT-Model header. The earlier
-                // version of this check called CloudSttCatalog.DictationModelsForId,
-                // which has NO production caller, so it passed whether or not the
-                // send path guarded anything.
-                var geminiDefault = catalog.DefaultModelIdForId("geminiTranscribe");
-                Assert(geminiDefault == "gemini-3.5-transcribe",
-                    $"the geminiTranscribe tier default moved, this check needs updating - got '{geminiDefault}'");
-                Assert(HyperWhisperCloudService.ResolveDictationModelId("geminiTranscribe", "gemini-3.5-transcribe-live") == geminiDefault,
-                    "the send path still sends the live-only id as X-STT-Model - every dictation would 400");
-                Assert(HyperWhisperCloudService.ResolveDictationModelId("geminiTranscribe", "  GEMINI-3.5-TRANSCRIBE-LIVE  ") == geminiDefault,
-                    "the send path let a padded/upper-cased live-only id through");
-
-                // ...and it must NOT punt a legitimate model back to the default.
-                Assert(HyperWhisperCloudService.ResolveDictationModelId("geminiTranscribe", "gemini-3.5-transcribe") == "gemini-3.5-transcribe",
-                    "the send path replaced a valid Gemini dictation model with the tier default");
-                foreach (var deepgramModel in catalog.ModelsForId("deepgramNova3"))
-                {
-                    Assert(HyperWhisperCloudService.ResolveDictationModelId("deepgramNova3", deepgramModel.Id) == deepgramModel.Id,
-                        $"the send path dropped Deepgram's '{deepgramModel.Id}' - only live-only ids may be filtered");
-                }
-            });
-
-            Run("the standalone Azure MAI service sends the mode's model as X-STT-Model", () =>
-            {
-                // AzureMAITranscriptionService routes to the same HW Cloud
-                // /transcribe proxy as the HyperWhisper Cloud tier, where the
-                // model travels ONLY as X-STT-Model (hw-net builds that header
-                // from `routed_model`, never from `model`). Before this was
-                // wired the service sent nothing, so a mode pinned to
-                // mai-transcribe-1.5 transcribed and billed as mai-transcribe-2.
-                //
-                // The model is CONSTRUCTOR state, not a settable property: the
-                // service is built once per request precisely so two overlapping
-                // requests cannot overwrite each other's model.
-                Assert(new HyperWhisper.Services.AzureMAITranscriptionService("mai-transcribe-1.5")
-                        .ResolveRoutedModel() == "mai-transcribe-1.5",
-                    "a mode pinned to mai-transcribe-1.5 did not resolve that model for X-STT-Model");
-
-                Assert(new HyperWhisper.Services.AzureMAITranscriptionService("mai-transcribe-2")
-                        .ResolveRoutedModel() == "mai-transcribe-2",
-                    "a mode pinned to mai-transcribe-2 did not resolve that model for X-STT-Model");
-
-                // A stale id (the field is shared with the BYOK path) degrades to
-                // the catalog default rather than earning a backend 400.
-                Assert(new HyperWhisper.Services.AzureMAITranscriptionService("whisper-1")
-                        .ResolveRoutedModel() == "mai-transcribe-2",
-                    "a stale Azure model id did not fall back to the catalog default");
-
-                Assert(new HyperWhisper.Services.AzureMAITranscriptionService(null)
-                        .ResolveRoutedModel() == "mai-transcribe-2",
-                    "an unset Azure model did not fall back to the catalog default");
-            });
-
-            Run("two overlapping Azure MAI requests keep their own model", () =>
-            {
-                // REGRESSION GUARD for a billing bug. The first cut of the fix
-                // above stored the model on a settable property of the factory's
-                // CACHED service instance. TranscriptionRuntime.Orchestrator is a
-                // static singleton holding one TranscriptionProviderFactory and
-                // nothing locks, so a hotkey dictation and a Local API
-                // POST /transcribe that overlap overwrote each other's model
-                // between "configure" and "send" — one request then transcribed
-                // and billed as the other's model (v2 at 1.5's 6.0 credits/min is
-                // a 3.6x overcharge; 1.5 at v2's rate also sends v2's
-                // transcribeStyle: clean).
-                //
-                // The property this pins: the model reaches the request as
-                // immutable per-call state. Interleave two "requests" the way the
-                // race did — build both before either resolves — and each must
-                // still answer with its own model.
-                var factory = new HyperWhisper.Services.Transcription.TranscriptionProviderFactory();
-                try
-                {
-                    var requestA = factory.GetConfiguredCloudProvider(
-                        CloudTranscriptionProvider.MicrosoftAzureSpeech, "mai-transcribe-1.5");
-                    var requestB = factory.GetConfiguredCloudProvider(
-                        CloudTranscriptionProvider.MicrosoftAzureSpeech, "mai-transcribe-2");
-
-                    Assert(!ReferenceEquals(requestA, requestB),
-                        "the factory handed both requests the SAME routed instance - the model is shared mutable state again");
-
-                    var routedA = requestA as HyperWhisper.Services.Transcription.RoutedTranscriptionServiceBase;
-                    var routedB = requestB as HyperWhisper.Services.Transcription.RoutedTranscriptionServiceBase;
-                    Assert(routedA != null && routedB != null,
-                        "the Azure MAI arm stopped returning a RoutedTranscriptionServiceBase");
-
-                    // Resolve AFTER both were built - this is the interleaving
-                    // that produced the wrong bill.
-                    Assert(routedA!.ResolveRoutedModel() == "mai-transcribe-1.5",
-                        "request A's model was overwritten by a later overlapping request");
-                    Assert(routedB!.ResolveRoutedModel() == "mai-transcribe-2",
-                        "request B did not carry its own model");
-                }
-                finally
-                {
-                    factory.Dispose();
-                }
             });
 
             RunAsync("two overlapping BYOK calls on the shared provider each send their own model (#753)", async () =>
@@ -12990,68 +12713,6 @@ internal static class Program
                 Assert(h.Flow.StagedSource?.CloudProvider is null, "on-device stages no cloud provider");
             });
 
-            RunAsync("onboarding: the cloud branch needs a working key, not just typed text", async () =>
-            {
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.AdvanceTo(OnboardingStep.Source);
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.AdvanceTo(OnboardingStep.Configure);
-
-                h.Flow.LicenseKeyInput = "some-key";
-                Assert(!h.Flow.CanContinue, "typed text alone must not open the gate");
-
-                h.Flow.TestAccessKey();
-                await h.LastTask;
-
-                Assert(h.License.ProbedKeys.Count == 1 && h.License.ProbedKeys[0] == "some-key",
-                    "the trimmed key must be the one probed");
-                Assert(h.Flow.LicenseTestPassed == true, "the probe passed");
-                Assert(h.Flow.CanContinue, "a passing probe opens the gate");
-
-                // Editing the key invalidates the pass.
-                h.Flow.LicenseKeyInput = "another-key";
-                Assert(!h.Flow.KeyValidated, "an edit must clear the pass");
-                Assert(!h.Flow.CanContinue, "an edit must shut the gate");
-            });
-
-            RunAsync("onboarding: the cloud setup gate opens only after activation", async () =>
-            {
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.Flow.LicenseKeyInput = "key";
-                h.Flow.TestAccessKey();
-                await h.LastTask;
-
-                h.AdvanceTo(OnboardingStep.Setup);
-                Assert(!h.Flow.CanContinue, "a passing probe is not an activation");
-
-                h.Flow.ActivateCloudLicense();
-                await h.LastTask;
-
-                Assert(h.License.ActivatedKeys.Count == 1 && h.License.ActivatedKeys[0] == "key",
-                    "activation must use the typed key");
-                Assert(h.Flow.CanContinue, "activation opens the setup gate");
-                Assert(h.Flow.StagedSource?.CloudProvider == "hyperwhisper", "cloud stages the hyperwhisper provider");
-                Assert(h.Flow.StagedSource?.PostProcessingMode == 1, "cloud stages post-processing on");
-            });
-
-            RunAsync("onboarding: a failed activation surfaces its error and keeps the gate closed", async () =>
-            {
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.Flow.LicenseKeyInput = "key";
-                h.License.ActivateOutcome = OnboardingLicenseOutcome.Failure("license expired");
-
-                h.Flow.ActivateCloudLicense();
-                await h.LastTask;
-
-                Assert(h.Flow.SetupErrorMessage == "license expired", "the activation error must reach the one surface");
-                Assert(!h.Flow.IsSelectedSourceUsable, "a failed activation leaves the source unusable");
-            });
-
             RunAsync("onboarding: the provider branch stages the chosen provider", async () =>
             {
                 var h = new OnboardingHarness();
@@ -13123,19 +12784,6 @@ internal static class Program
 
                 Assert(!h.Flow.KeyValidated, "the inline result is cleared on every appearance");
                 Assert(h.Flow.CanContinue, "an already validated key must keep the gate open");
-            });
-
-            Run("onboarding: an error from outside the flow is never shown", () =>
-            {
-                var h = new OnboardingHarness();
-                // App-global, long-lived state produced by another screen entirely.
-                h.ProviderKeys.ValidationError = "a credential failure from another screen";
-
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                Assert(h.Flow.SetupErrorMessage is null, "the cloud branch must start clean");
-
-                h.Flow.SelectSource(OnboardingSourceKind.YourProvider);
-                Assert(h.Flow.SetupErrorMessage is null, "the provider branch must start clean");
             });
 
             RunAsync("onboarding: changing provider clears the key and the validation", async () =>
@@ -13586,51 +13234,6 @@ internal static class Program
 
             // ----- Late async completion (defect 3) ----------------------------
 
-            RunAsync("onboarding: an activation that lands after dismissal cannot write flow state", async () =>
-            {
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.Flow.LicenseKeyInput = "key";
-                h.License.GateActivation = true;
-
-                h.Flow.ActivateCloudLicense();
-                var task = h.LastTask;
-                Assert(!task.IsCompleted, "precondition: the activation is parked on the gate");
-
-                h.Flow.DeferSetup();
-                Assert(!h.Flow.IsLiveForTesting, "deferral closes the commit boundary first");
-                Assert(!h.Flow.HasInFlightWorkForTesting, "deferral empties the task box");
-
-                // The network call now lands, long after the window closed.
-                h.License.Release();
-                await task;
-
-                Assert(!h.Flow.KeyValidated, "a late activation must not validate the key");
-                Assert(h.Flow.SetupErrorMessage is null, "a late activation must not write an error");
-                Assert(h.Committer.ProductionState == FakeOnboardingCommitter.Seed,
-                    "a late activation must not write production state");
-            });
-
-            RunAsync("onboarding: a stale licence probe result is discarded", async () =>
-            {
-                var h = new OnboardingHarness();
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.License.GateProbe = true;
-                h.Flow.LicenseKeyInput = "first-key";
-
-                h.Flow.TestAccessKey();
-                var task = h.LastTask;
-                // The user edits the key before the probe result is consumed.
-                h.Flow.LicenseKeyInput = "second-key";
-                h.License.Release();
-                await task;
-
-                Assert(!h.Flow.KeyValidated, "a result for an abandoned key must not open the gate");
-                Assert(h.Flow.LicenseTestPassed is null, "a result for an abandoned key must not be shown");
-                Assert(!h.Flow.IsTestingKey, "the spinner must stop even for a discarded result");
-            });
-
             RunAsync("onboarding: a stale provider key probe is never persisted", async () =>
             {
                 var h = new OnboardingHarness();
@@ -13709,168 +13312,6 @@ internal static class Program
                 Assert(h.Flow.IsSelectedSourceUsable, "the per-session record keeps the setup gate open");
             });
 
-            RunAsync("onboarding: the cloud setup checklist keeps the key verified across Back", async () =>
-            {
-                // #491 part 2. The "Access key verified" row read the bare KeyValidated,
-                // which ResetConfigureTestResults clears on EVERY entry to the Configure
-                // step, in both directions. So one Back-and-forward unticked it while
-                // "Account activated for this device" and "Credits confirmed" below it
-                // stayed ticked and a live balance was still shown - the card claimed the
-                // key was unverified on a device whose account that same key had just
-                // activated.
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.AdvanceTo(OnboardingStep.Source);
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.AdvanceTo(OnboardingStep.Configure);
-
-                h.Flow.LicenseKeyInput = "HW-GOOD";
-                h.Credits.NextCredits = new OnboardingCloudCredits(66300, 10523, "$66.30 remaining");
-
-                h.Flow.TestAccessKey();
-                await h.LastTask;
-                Assert(h.Flow.CloudKeyIsVerified, "precondition: the probe passed");
-
-                Assert(h.Flow.Advance(), "setup must be reachable");
-                h.Flow.ActivateCloudLicense();
-                await h.LastTask;
-                Assert(h.Flow.IsSelectedSourceUsable, "precondition: activated");
-                Assert(h.Flow.AreCreditsConfirmed, "precondition: the balance arrived");
-
-                Assert(h.Flow.Back(), "back to configure must work");
-                Assert(h.Flow.Advance(), "forward to setup must work");
-
-                Assert(!h.Flow.KeyValidated,
-                    "the inline result is still cleared on every appearance - that part was correct");
-                Assert(h.Flow.CloudKeyIsVerified,
-                    "but the checklist row must not untick: the key verified and the account is active");
-                Assert(h.Flow.IsSelectedSourceUsable && h.Flow.AreCreditsConfirmed,
-                    "the two rows below it were never in doubt, which is what made the contradiction");
-            });
-
-            Run("onboarding: an active cloud licence alone verifies the key", () =>
-            {
-                // The returning-user path: nothing was probed this session, the field is
-                // empty, but the server has already accepted this key on this device.
-                // ConfigureGateIsOpen has always read it that way; the checklist row now
-                // reads the same property rather than a second, narrower rule.
-                var h = new OnboardingHarness();
-                h.License.IsActive = true;
-                h.GrantMicrophone();
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-
-                Assert(!h.Flow.KeyValidated, "no inline test ran this session");
-                Assert(h.Flow.CloudKeyIsVerified, "an active licence is proof enough on its own");
-            });
-
-            Run("onboarding: the cloud key is only verified for the cloud source", () =>
-            {
-                // CloudKeyIsVerified feeds the Configure gate's cloud branch, so it must
-                // never read true under BYOK - a licence left active from an earlier run
-                // would otherwise tick a row about an API key that was never entered.
-                var h = new OnboardingHarness();
-                h.License.IsActive = true;
-                h.GrantMicrophone();
-                h.AdvanceTo(OnboardingStep.Source);
-                h.Flow.SelectSource(OnboardingSourceKind.YourProvider);
-                Assert(h.Flow.Advance(), "the BYOK branch reaches configure");
-
-                Assert(!h.Flow.CloudKeyIsVerified, "the licence says nothing about a BYOK key");
-                Assert(!h.Flow.CanContinue, "and it must not open the BYOK gate either");
-            });
-
-            RunAsync("onboarding: the BYOK setup checklist keeps the key verified across Back", async () =>
-            {
-                // The BYOK "API key verified" row on the same page had the identical
-                // defect for the identical reason: it bound the bare KeyValidated, which
-                // is cleared on every entry to Configure, while "Saved to Windows
-                // Credential Manager" below it reads the per-session record and stayed
-                // ticked. Same fix, so the same case, one branch over.
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.AdvanceTo(OnboardingStep.Source);
-                h.Flow.SelectSource(OnboardingSourceKind.YourProvider);
-                h.AdvanceTo(OnboardingStep.Configure);
-
-                h.Flow.ApiKeyInput = "sk-test";
-                h.Flow.TestProviderKey();
-                await h.LastTask;
-                Assert(h.Flow.ProviderKeyIsVerified, "precondition: probed and stored");
-
-                Assert(h.Flow.Advance(), "setup must be reachable");
-                Assert(h.Flow.Back(), "back to configure must work");
-                Assert(h.Flow.Advance(), "forward to setup must work");
-
-                Assert(!h.Flow.KeyValidated, "the inline result is cleared on every appearance");
-                Assert(h.Flow.ProviderKeyIsVerified, "but the checklist row must not untick");
-                Assert(h.Flow.IsSelectedSourceUsable,
-                    "the row below it was never in doubt, which is what made the contradiction");
-                Assert(!h.Flow.CloudKeyIsVerified, "and the cloud row stays out of the BYOK branch");
-            });
-
-            RunAsync("onboarding: the cloud setup subtitle never claims a state the step has not reached", async () =>
-            {
-                // #491 part 1. The subtitle was the static
-                // "Key verified, credits confirmed. Recordings will go to HyperWhisper
-                // Cloud." - printed on arrival, directly above a checklist with both of
-                // those rows EMPTY, an "Activate Cloud" button showing and Continue
-                // disabled. It described the end of the step from its beginning.
-                //
-                // Three states, because the checklist has three rows and the credits
-                // fetch is asynchronous AND allowed to fail: claiming "credits
-                // confirmed" the instant the licence goes active would just move the
-                // same contradiction one row down.
-                var subtitle = HyperWhisper.Localization.Loc.S("onboarding.setup.cloud.subtitle");
-                var pendingKey = HyperWhisper.Localization.Loc.S("onboarding.setup.cloud.subtitle.pending");
-                var pendingBalance =
-                    HyperWhisper.Localization.Loc.S("onboarding.setup.cloud.subtitle.balancePending");
-
-                // Loc.S echoes the KEY back when the resource is missing, so a dropped
-                // resx entry would make every comparison below pass on its own.
-                foreach (var (name, text) in new[]
-                         {
-                             ("onboarding.setup.cloud.subtitle", subtitle),
-                             ("onboarding.setup.cloud.subtitle.pending", pendingKey),
-                             ("onboarding.setup.cloud.subtitle.balancePending", pendingBalance)
-                         })
-                {
-                    Assert(text != name, $"{name} resolved to its own key - it is not in Strings.resx");
-                }
-
-                Assert(
-                    subtitle != pendingKey && subtitle != pendingBalance && pendingKey != pendingBalance,
-                    "the three states must read differently, or two of them are the same state");
-
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.Flow.LicenseKeyInput = "HW-GOOD";
-
-                Assert(!h.Flow.IsSelectedSourceUsable, "precondition: not activated yet");
-                Assert(h.Flow.SetupCloudSubtitle == pendingKey,
-                    "an unactivated step gets the sentence that asks for the activation");
-
-                // Activation with the credits fetch failing - the #463 shape, where the
-                // balance never arrives and the row below stays unticked.
-                h.Credits.ThrowOnRefresh = true;
-                h.Flow.ActivateCloudLicense();
-                await h.LastTask;
-
-                Assert(h.Flow.IsSelectedSourceUsable, "precondition: activated");
-                Assert(!h.Flow.AreCreditsConfirmed, "precondition: the balance did not arrive");
-                Assert(h.Flow.SetupCloudSubtitle == pendingBalance,
-                    "activated with no balance must not claim the credits were confirmed");
-
-                h.Credits.ThrowOnRefresh = false;
-                h.Credits.NextCredits = new OnboardingCloudCredits(66300, 10523, "$66.30 remaining");
-                h.Flow.RefreshCredits(force: true);
-                await h.LastTask;
-
-                Assert(h.Flow.AreCreditsConfirmed, "precondition: the balance arrived");
-                Assert(h.Flow.SetupCloudSubtitle == subtitle,
-                    "only once all three rows are true is the original sentence used");
-            });
-
             RunAsync("onboarding: validation is remembered per provider, not globally", async () =>
             {
                 var h = new OnboardingHarness();
@@ -13894,73 +13335,6 @@ internal static class Program
                 // Groq's record survives the round trip.
                 h.Flow.SelectProvider(CloudTranscriptionProvider.Groq);
                 Assert(h.Flow.CanContinue, "the validated provider's record survives");
-            });
-
-            RunAsync("onboarding: returning to configure keeps the cloud gate open for the tested key", async () =>
-            {
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.AdvanceTo(OnboardingStep.Source);
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.AdvanceTo(OnboardingStep.Configure);
-
-                h.Flow.LicenseKeyInput = "hw-key";
-                h.Flow.TestAccessKey();
-                await h.LastTask;
-                Assert(h.Flow.CanContinue, "precondition: the probe passed");
-
-                Assert(h.Flow.Advance(), "setup must be reachable");
-                Assert(h.Flow.Back(), "back to configure must work");
-                h.Flow.ResetConfigureTestResults();
-
-                Assert(!h.Flow.KeyValidated, "the inline result is cleared on every appearance");
-                Assert(h.Flow.CanContinue, "the field still holds the exact key that passed");
-            });
-
-            RunAsync("onboarding: editing the remembered key closes the gate until it matches again", async () =>
-            {
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.AdvanceTo(OnboardingStep.Source);
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.AdvanceTo(OnboardingStep.Configure);
-
-                h.Flow.LicenseKeyInput = "hw-key";
-                h.Flow.TestAccessKey();
-                await h.LastTask;
-                h.Flow.ResetConfigureTestResults();
-                Assert(h.Flow.CanContinue, "precondition: the remembered key holds the gate open");
-
-                h.Flow.LicenseKeyInput = "hw-key-edited";
-                Assert(!h.Flow.CanContinue, "an edit must shut the gate");
-
-                // Retyping the validated key reopens it without another probe.
-                h.Flow.LicenseKeyInput = "hw-key";
-                Assert(h.Flow.CanContinue, "the exact validated key reopens the gate");
-                Assert(h.License.ProbedKeys.Count == 1, "no second probe may run");
-            });
-
-            RunAsync("onboarding: a failed re-probe of the remembered key closes the gate", async () =>
-            {
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.AdvanceTo(OnboardingStep.Source);
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.AdvanceTo(OnboardingStep.Configure);
-
-                h.Flow.LicenseKeyInput = "hw-key";
-                h.Flow.TestAccessKey();
-                await h.LastTask;
-                Assert(h.Flow.CanContinue, "precondition: the probe passed");
-
-                // The key is revoked server side; a re-probe of the SAME key fails.
-                h.License.ProbeOutcome = OnboardingLicenseOutcome.Failure("revoked");
-                h.Flow.TestAccessKey();
-                await h.LastTask;
-
-                Assert(!h.Flow.CanContinue, "a failing re-probe must shut the gate");
-                h.Flow.ResetConfigureTestResults();
-                Assert(!h.Flow.CanContinue, "a revoked key must not stay remembered");
             });
 
             // ----- The shortcut row (Windows-only) -----------------------------
@@ -14043,116 +13417,6 @@ internal static class Program
             });
 
             // ----- Credits (Windows-only seam) ---------------------------------
-
-            Run("onboarding: the credits figure reads as unknown until it arrives", () =>
-            {
-                var h = new OnboardingHarness();
-                Assert(!h.Flow.HasCredits, "nothing has been fetched yet");
-                Assert(h.Flow.CreditsFormatted == "…", "an unknown balance renders as an ellipsis, never a zero");
-
-                h.Credits.Publish(new OnboardingCloudCredits(1240.5, 310, "1,240"));
-
-                Assert(h.Flow.HasCredits, "the balance arrived");
-                Assert(h.Flow.CreditsFormatted == "1,240", "the gateway's own formatting is shown");
-            });
-
-            Run("onboarding: the credits figure never gates the flow", () =>
-            {
-                var h = new OnboardingHarness();
-                h.License.IsActive = true;
-                h.GrantMicrophone();
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.AdvanceTo(OnboardingStep.Setup);
-
-                Assert(h.Credits.RefreshCount >= 1, "entering a cloud step must fetch the balance");
-                Assert(!h.Flow.HasCredits, "precondition: the fake landed no balance");
-                Assert(h.Flow.CanContinue, "an active licence opens the gate whatever the balance says");
-            });
-
-            RunAsync("onboarding: a failed credits fetch is not a setup error", async () =>
-            {
-                var h = new OnboardingHarness();
-                h.License.IsActive = true;
-                h.Credits.ThrowOnRefresh = true;
-                h.GrantMicrophone();
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.AdvanceTo(OnboardingStep.Configure);
-                await h.LastTask;
-
-                Assert(h.Flow.SetupErrorMessage is null, "a credits failure must never reach the setup error surface");
-                Assert(!h.Flow.HasCredits, "the balance simply stays unknown");
-                Assert(h.Flow.CreditsFormatted == "…", "an unknown balance renders as an ellipsis");
-                Assert(h.Flow.CanContinue, "a credits failure must never close the gate");
-            });
-
-            RunAsync("onboarding: a successful activation refreshes the balance", async () =>
-            {
-                // StepDidChange fetches on entry to Configure and to Setup, and BOTH of
-                // those run while a first-run machine is still unlicensed - so every
-                // fetch came back unknown and nothing ever asked again. "Credits
-                // confirmed" stayed unticked on a good key.
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.Flow.LicenseKeyInput = "HW-GOOD";
-
-                h.Credits.NextCredits = new OnboardingCloudCredits(66950, 10627, "$66.95 remaining");
-                var before = h.Credits.RefreshCount;
-
-                h.Flow.ActivateCloudLicense();
-                var task = h.LastTask;
-                await task;
-
-                Assert(h.Credits.RefreshCount > before, "activation must ask for the balance again");
-                Assert(h.Flow.HasCredits, "and the balance must land on the flow");
-                Assert(h.Flow.AreCreditsConfirmed, "so the Credits confirmed row ticks");
-            });
-
-            RunAsync("onboarding: a passing probe refreshes the balance with the probed key", async () =>
-            {
-                // Same first-run problem one step earlier. The entry fetch runs unlicensed and
-                // comes back "Invalid license key", so the big number above "credits available"
-                // sat on its "…" placeholder for good on a perfectly valid key. A probe does NOT
-                // store the key -- only activation does -- so the key has to be handed to the
-                // fetch, or it asks about the device id and fails the same way again.
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.AdvanceTo(OnboardingStep.Source);
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.AdvanceTo(OnboardingStep.Configure);
-
-                h.Flow.LicenseKeyInput = "  HW-GOOD  ";
-                h.Credits.NextCredits = new OnboardingCloudCredits(66950, 10627, "$66.95 remaining");
-                var before = h.Credits.RefreshCount;
-
-                h.Flow.TestAccessKey();
-                await h.LastTask;
-                await h.LastTask;
-
-                Assert(h.Flow.LicenseTestPassed == true, "the probe passed");
-                Assert(h.Credits.RefreshCount > before, "a passing probe must ask for the balance");
-                Assert(h.Credits.LastLicenseKeyOverride == "HW-GOOD",
-                    $"the probed key must reach the fetch, got '{h.Credits.LastLicenseKeyOverride}'");
-                Assert(h.Flow.HasCredits, "and the balance must land on the flow");
-            });
-
-            Run("onboarding: the Done summary shows the credit count, not the balance line", () =>
-            {
-                // The format is "{0} · {1} credits", so {1} is a COUNT. Passing
-                // CreditsFormatted rendered "HyperWhisper Cloud · $66.95 remaining
-                // (~10627 minutes) credits".
-                var h = new OnboardingHarness();
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.Credits.Publish(new OnboardingCloudCredits(66950, 10627, "$66.95 remaining (~10627 minutes)"));
-                h.Flow.RefreshCredits(force: false);
-
-                Assert(h.Flow.CreditsCountFormatted == 66950d.ToString("N0", CultureInfo.CurrentCulture),
-                    $"unexpected count rendering '{h.Flow.CreditsCountFormatted}'");
-                Assert(!h.Flow.SourceSummary.Contains("remaining"),
-                    $"the balance line must not reach the summary: '{h.Flow.SourceSummary}'");
-                Assert(h.Flow.SourceSummary.Contains(h.Flow.CreditsCountFormatted),
-                    $"the count must reach the summary: '{h.Flow.SourceSummary}'");
-            });
 
             // ----- Device availability (Windows-only) --------------------------
 
@@ -14282,64 +13546,6 @@ internal static class Program
             // fixed by one mechanism (ValidationScope) and pinned by four cases
             // rather than by three staleness checks that disagree.
 
-            RunAsync("onboarding F1: a licence probe landing after a source change cannot open the BYOK gate", async () =>
-            {
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.AdvanceTo(OnboardingStep.Source);
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.Flow.Advance();                                   // -> Configure (cloud)
-
-                h.Flow.LicenseKeyInput = "HW-CLOUD-KEY-0001";
-                h.License.GateProbe = true;
-                h.Flow.TestAccessKey();                             // parked: a slow network
-                var task = h.LastTask;
-
-                // The user backs out and picks the OTHER cloud branch while the
-                // probe is still in the air.
-                Assert(h.Flow.Back(), "back to source must work");
-                h.Flow.SelectSource(OnboardingSourceKind.YourProvider);
-                Assert(h.Flow.Advance(), "configure must be reachable for BYOK");
-
-                h.License.Release();
-                await task;
-
-                Assert(!h.Flow.KeyValidated, "a licence pass is not a BYOK pass");
-                Assert(!h.Flow.CanContinue,
-                    "the BYOK gate must stay shut with an empty API key field, whatever the licence probe said");
-                Assert(h.Flow.ApiKeyInput.Length == 0, "precondition: nothing was typed for the provider");
-                Assert(h.Flow.ProviderTestHealth is null, "no provider was ever probed");
-                Assert(!h.Flow.IsTestingKey, "the spinner must not be left running");
-            });
-
-            RunAsync("onboarding F1: a provider probe landing after a source change cannot open the Cloud gate", async () =>
-            {
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.AdvanceTo(OnboardingStep.Source);
-                h.Flow.SelectSource(OnboardingSourceKind.YourProvider);
-                h.Flow.Advance();                                   // -> Configure (BYOK)
-
-                h.Flow.ApiKeyInput = "sk-byok-0001";
-                h.ProviderKeys.GateProbe = true;
-                h.Flow.TestProviderKey();
-                var task = h.LastTask;
-
-                Assert(h.Flow.Back(), "back to source must work");
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                Assert(h.Flow.Advance(), "configure must be reachable for cloud");
-
-                h.ProviderKeys.Release();
-                await task;
-
-                Assert(!h.Flow.KeyValidated, "a BYOK pass is not a licence pass");
-                Assert(!h.Flow.CanContinue,
-                    "the Cloud gate must stay shut with an empty licence field");
-                Assert(h.ProviderKeys.Stored.Count == 0,
-                    "a probe abandoned by a source change must never write the credential store");
-                Assert(!h.Flow.HasPendingProductionWrite, "and must never set a restore point");
-            });
-
             Run("onboarding F2: Advance and Back do nothing once the flow has finished", () =>
             {
                 var h = new OnboardingHarness();
@@ -14420,97 +13626,6 @@ internal static class Program
                 Assert(!h.Flow.HasInFlightWorkForTesting, "and must not start a probe");
             });
 
-            RunAsync("onboarding F4: a throwing activation clears the spinner and stays retryable", async () =>
-            {
-                var thrower = new OnboardingHarness();
-                var flow = new OnboardingFlowViewModel(
-                    thrower.Permissions,
-                    thrower.Catalog,
-                    new ThrowingOnboardingLicense(thrower.License, probeThrows: false, activateThrows: true),
-                    thrower.Credits,
-                    thrower.ProviderKeys,
-                    thrower.Audio,
-                    thrower.Committer,
-                    OnboardingHarness.SystemDefaultName);
-
-                thrower.Permissions.MicrophoneAuthorization = OnboardingMicrophoneAuthorization.Authorized;
-                flow.RefreshPermissions();
-                Assert(flow.Advance() && flow.Advance(), "welcome and permissions must pass");
-                flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                Assert(flow.Advance(), "configure must be reachable");
-                flow.LicenseKeyInput = "HW-KEY";
-                flow.TestAccessKey();
-                await flow.LastAsyncTaskForTesting!;
-                Assert(flow.Advance(), "setup must be reachable once the key probes clean");
-
-                flow.ActivateCloudLicense();
-                await flow.LastAsyncTaskForTesting!;
-
-                // ActivateCloudLicenseCoreAsync caught only OperationCanceledException,
-                // so anything else escaped the un-awaited task and left the button
-                // reading "Activating…" and disabled for good - with Continue gated
-                // on an activation that could never be retried.
-                Assert(!flow.IsActivatingLicense, "a throwing activation must not strand the spinner");
-                Assert(flow.CanActivateLicense, "the button must be pressable again");
-                Assert(flow.HasSetupError, "and the failure must be visible rather than swallowed");
-            });
-
-            RunAsync("onboarding F4: a throwing provider probe clears the spinner", async () =>
-            {
-                // The sibling. It was already recoverable by leaving and re-entering
-                // the Configure step; it is now cleared where it is raised, on the
-                // same terms as the activation spinner.
-                var h = new OnboardingHarness();
-                var flow = new OnboardingFlowViewModel(
-                    h.Permissions,
-                    h.Catalog,
-                    h.License,
-                    h.Credits,
-                    new ThrowingOnboardingProviderKeys(h.ProviderKeys),
-                    h.Audio,
-                    h.Committer,
-                    OnboardingHarness.SystemDefaultName);
-
-                flow.SelectSource(OnboardingSourceKind.YourProvider);
-                flow.ApiKeyInput = "sk-throws";
-                flow.TestProviderKey();
-                await flow.LastAsyncTaskForTesting!;
-
-                Assert(!flow.IsTestingKey, "a throwing probe must not strand the spinner");
-                Assert(flow.CanTestProviderKey, "the button must be pressable again");
-                Assert(!flow.KeyValidated, "a throw is not a pass");
-                Assert(h.ProviderKeys.Stored.Count == 0, "and must never reach the persist");
-            });
-
-            RunAsync("onboarding F5: an activation result is never shown under a superseded key", async () =>
-            {
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.AdvanceTo(OnboardingStep.Source);
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                Assert(h.Flow.Advance(), "configure must be reachable");
-
-                h.Flow.LicenseKeyInput = "KEY-A";
-                h.Flow.TestAccessKey();
-                await h.LastTask;
-                Assert(h.Flow.Advance(), "setup must be reachable");
-
-                h.License.GateActivation = true;
-                h.License.ActivateOutcome = OnboardingLicenseOutcome.Failure("Activation limit reached.");
-                h.Flow.ActivateCloudLicense();                      // parked, activating KEY-A
-                var task = h.LastTask;
-
-                h.Flow.LicenseKeyInput = "KEY-B";                   // the user retypes
-                h.License.ReleaseActivation();
-                await task;
-
-                Assert(h.License.ActivatedKeys.Count == 1 && h.License.ActivatedKeys[0] == "KEY-A",
-                    "exactly one activation, for the key that was on screen when it started");
-                Assert(!h.Flow.HasSetupError,
-                    $"KEY-A's failure must not be shown under KEY-B: '{h.Flow.SetupErrorMessage}'");
-                Assert(!h.Flow.IsActivatingLicense, "the spinner must still stop");
-            });
-
             Run("onboarding F6: the masked API key never splits a surrogate pair", () =>
             {
                 var h = new OnboardingHarness();
@@ -14544,67 +13659,6 @@ internal static class Program
                 h.Flow.ApiKeyInput = string.Concat(Enumerable.Repeat("\U0001F600", 8));
                 Assert(h.Flow.MaskedApiKey == HyperWhisper.Localization.Loc.S("onboarding.setup.provider.keyHidden"),
                     "eight characters is short enough to hide outright, however wide they encode");
-            });
-
-            RunAsync("onboarding F1: leaving Configure cancels a probe in flight and keeps the earlier pass", async () =>
-            {
-                // The other half of the F1 remedy: in-flight checks are cancelled
-                // when the user moves off the step that started them, so neither
-                // spinner is left running and no result lands on a screen the user
-                // is no longer on. What a cancelled RE-probe must NOT do is retract
-                // the pass the same key already earned - the gate is open on that
-                // pass, and a cancelled call is evidence of nothing.
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.AdvanceTo(OnboardingStep.Source);
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                Assert(h.Flow.Advance(), "configure must be reachable");
-
-                h.Flow.LicenseKeyInput = "HW-KEY";
-                h.Flow.TestAccessKey();
-                await h.LastTask;
-                Assert(h.Flow.KeyValidated && h.Flow.CanContinue, "precondition: the key passed");
-
-                h.License.GateProbe = true;
-                h.Flow.TestAccessKey();                             // a second press, parked
-                var second = h.LastTask;
-                Assert(h.Flow.IsTestingKey, "precondition: the re-probe is running");
-
-                Assert(h.Flow.Advance(), "the gate is open, so Continue must work");
-                Assert(!h.Flow.IsTestingKey, "leaving the step must not strand the spinner");
-                Assert(!h.Flow.HasInFlightWorkForTesting, "and must not leave the check in the task box");
-
-                h.License.ReleaseProbe();
-                await second;
-
-                Assert(h.Flow.KeyValidated,
-                    "a cancelled re-probe must not retract the pass the same key already earned");
-                Assert(h.Flow.Step == OnboardingStep.Setup, "and the flow must have moved on");
-            });
-
-            RunAsync("onboarding: the licence fake parks a probe and an activation independently", async () =>
-            {
-                // Not a product defect - a defect in the test double, which produced
-                // roughly 800 false positives in one fuzz round. One shared gate
-                // field meant parking a probe after an activation orphaned the
-                // activation's TaskCompletionSource forever, and Release() nulling
-                // the field made IsParked read false while a call was still parked.
-                var license = new FakeOnboardingLicense { GateProbe = true, GateActivation = true };
-
-                var activation = license.ActivateAsync("KEY", CancellationToken.None);
-                var probe = license.ProbeAsync("KEY", CancellationToken.None);
-
-                Assert(license.IsActivationParked && license.IsProbeParked, "both calls are parked");
-                Assert(!activation.IsCompleted && !probe.IsCompleted, "and neither has landed");
-
-                license.ReleaseProbe();
-                await probe;
-                Assert(!activation.IsCompleted, "releasing the probe must not land the activation");
-                Assert(license.IsActivationParked, "and must not forget that the activation is still parked");
-
-                license.ReleaseActivation();
-                await activation;
-                Assert(!license.IsParked, "nothing is parked once both have been released");
             });
 
             // =================================================================
@@ -14925,7 +13979,7 @@ internal static class Program
                 Assert(!empty.Flow.IsOnDeviceAvailable, "precondition: no local engine on this machine");
                 Assert(empty.Flow.SourceOptions.All(r => r.Kind != OnboardingSourceKind.OnDevice),
                     "the on-device card must not be offered where no model can be installed");
-                Assert(empty.Flow.SourceOptions.Count == 2, "the other two branches are unaffected");
+                Assert(empty.Flow.SourceOptions.Count == 1, "the other two branches are unaffected");
 
                 empty.Flow.SelectSource(OnboardingSourceKind.OnDevice);
                 Assert(empty.Flow.SelectedSource != OnboardingSourceKind.OnDevice,
@@ -14934,7 +13988,7 @@ internal static class Program
                 // The normal machine still gets all three.
                 var normal = new OnboardingHarness();
                 Assert(normal.Flow.IsOnDeviceAvailable, "precondition: the fake catalog has models");
-                Assert(normal.Flow.SourceOptions.Count == 3, "every branch is offered where it works");
+                Assert(normal.Flow.SourceOptions.Count == 2, "every branch is offered where it works");
                 Assert(normal.Flow.SourceOptions.Any(r => r.Kind == OnboardingSourceKind.OnDevice),
                     "including on-device");
             });
@@ -15097,28 +14151,6 @@ internal static class Program
                     "a failure with no Win32 code still has to say something");
             });
 
-            Run("onboarding: the credits panel flattens the cloud balance and survives having none", () =>
-            {
-                Assert(LiveOnboardingCreditsGateway.Flatten(null) is null,
-                    "no balance fetched yet must stay null so the panel renders an ellipsis, not a zero");
-
-                var credits = new HyperWhisperCloudCredits
-                {
-                    CreditsRemaining = 1234.5,
-                    MinutesRemaining = 78
-                };
-                var flat = LiveOnboardingCreditsGateway.Flatten(credits);
-
-                Assert(flat is not null, "a fetched balance must flatten");
-                Assert(flat!.CreditsRemaining == 1234.5, "credits must cross unchanged");
-                Assert(flat.MinutesRemaining == 78, "minutes must cross unchanged");
-                Assert(flat.FormattedBalance == credits.FormattedBalance,
-                    "the onboarding panel must print the same balance string as the rest of the app, "
-                    + "not its own re-formatting of the number");
-                Assert(flat.FormattedBalance == "$1.23 remaining (~78 minutes)",
-                    $"unexpected balance rendering '{flat.FormattedBalance}'");
-            });
-
             Run("onboarding: the curated model shortlist maps onto Model Library download ids", () =>
             {
                 var curated = LiveOnboardingModelCatalog.CuratedModels;
@@ -15169,60 +14201,6 @@ internal static class Program
                     CloudTranscriptionProvider.GoogleSpeech,
                 })
                     Assert(!offered.Contains(excluded), $"{excluded} must not be offered as a BYOK key vendor");
-            });
-
-            Run("onboarding: committing a staged source writes the Windows engine columns", () =>
-            {
-                // Windows Modes carry LocalEngine / LocalParakeetModel, which the
-                // macOS shape has no equivalent of. The committer derives them from
-                // the staged model id, so OnboardingStagedSource needs no extra
-                // field — but only if this mapping stays right.
-                var parakeet = new Mode();
-                LiveOnboardingSourceCommitter.ApplyStagedFields(
-                    parakeet,
-                    new OnboardingStagedSource(OnboardingSourceKind.OnDevice, "parakeet-v2", null, 0, null));
-
-                Assert(parakeet.ProviderType == "local", "an on-device source is local");
-                Assert(parakeet.LocalEngine == "parakeet", "a Parakeet id must select the Parakeet engine");
-                Assert(parakeet.LocalParakeetModel == "parakeet-v2", "the Parakeet slot holds the id");
-                Assert(parakeet.CloudProvider is null, "an on-device Mode has no cloud provider");
-
-                var whisper = new Mode();
-                LiveOnboardingSourceCommitter.ApplyStagedFields(
-                    whisper,
-                    new OnboardingStagedSource(OnboardingSourceKind.OnDevice, "base", null, 0, null));
-
-                Assert(whisper.LocalEngine == "whisper", "a Whisper id must select the Whisper engine");
-                Assert(whisper.Model == "base" && whisper.ModelType == "base",
-                    "both Whisper columns carry the id; TranscriptionService reads ModelType");
-                Assert(whisper.LocalParakeetModel is null,
-                    "a Whisper selection must not leave a stale Parakeet model behind");
-
-                var cloud = new Mode { CloudTranscriptionModel = "left-over-model" };
-                LiveOnboardingSourceCommitter.ApplyStagedFields(
-                    cloud,
-                    new OnboardingStagedSource(
-                        OnboardingSourceKind.HyperWhisperCloud, "hyperwhisper", "hyperwhisper", 1,
-                        CloudAccuracyTier.ElevenLabsScribeV2.ToStorageValue()));
-
-                Assert(cloud.ProviderType == "cloud", "a cloud source is cloud");
-                Assert(cloud.CloudProvider == "hyperwhisper", "the provider id must land");
-                Assert(cloud.PostProcessingMode == 1, "the staged post-processing mode must land");
-                Assert(cloud.CloudAccuracyTier == CloudAccuracyTier.ElevenLabsScribeV2.ToStorageValue(),
-                    "the staged accuracy tier must land");
-                Assert(cloud.CloudTranscriptionModel is null,
-                    "a stale per-provider model override would silently outrank the tier");
-
-                // #1477: a Parakeet pick after a cloud commit used to keep Model = "cloud",
-                // which macOS reads as a cloud mode when the backup crosses.
-                LiveOnboardingSourceCommitter.ApplyStagedFields(
-                    cloud,
-                    new OnboardingStagedSource(OnboardingSourceKind.OnDevice, "parakeet-v3", null, 0, null));
-                Assert(cloud.ProviderType == "local", "the re-committed source is local");
-                Assert(cloud.Model == "parakeet-v3",
-                    $"a Parakeet pick must rewrite the stale Model \"cloud\", got \"{cloud.Model}\"");
-                Assert(cloud.CloudProvider is null, "an on-device Mode has no cloud provider");
-                Assert(parakeet.Model == "parakeet-v2", $"the Parakeet Model column follows the id, got \"{parakeet.Model}\"");
             });
 
             // #1477: the portable model / cloudProvider / cloudTranscriptionModel of an
@@ -15434,128 +14412,6 @@ internal static class Program
                     explicitParakeet);
                 Assert(explicitParakeet.LocalParakeetModel == "parakeet-v3",
                     $"an explicit localParakeetModel must win, got \"{explicitParakeet.LocalParakeetModel}\"");
-            });
-
-            Run("Local API providerType (#1548): local/cloud in any casing, everything else refused; odd stored values read as on-device", () =>
-            {
-                // Accepted values fold to lowercase; an absent key stays absent.
-                foreach (var (raw, want) in new (string?, string?)[]
-                {
-                    (null, null), ("local", "local"), ("Local", "local"), ("LOCAL", "local"),
-                    ("cloud", "cloud"), ("Cloud", "cloud"), ("cLoUd", "cloud"),
-                })
-                {
-                    Assert(ModesEndpoints.TryNormalizeProviderType(raw, out var got) && got == want,
-                        $"providerType \"{raw}\" must be accepted as \"{want}\", got \"{got}\"");
-                }
-                // Every other value is refused with INVALID_REQUEST.
-                foreach (var raw in new[] { "zzz", "on-device", "", " local", "cloud ", "ondevice", "hwcloud" })
-                {
-                    Assert(!ModesEndpoints.TryNormalizeProviderType(raw, out _),
-                        $"providerType \"{raw}\" must be refused");
-                }
-
-                // A row stored before the rule runs on-device in the orchestrator,
-                // so every reader agrees: not Cloud, and GET /modes reports its model.
-                foreach (var stored in new[] { "zzz", "Cloud", "on-device" })
-                {
-                    var odd = new Mode { ProviderType = stored, LocalEngine = "whisper", ModelType = "base", Model = "base" };
-                    Assert(!LocalModeModel.IsCloud(odd), $"stored \"{stored}\" must read as on-device");
-                    Assert(!TranscriptionProviderFactory.IsHyperWhisperCloudActive(odd),
-                        $"stored \"{stored}\" must not pre-warm HyperWhisper Cloud");
-                    Assert(TranscribeEndpoints.ModelLabel(odd) == "base",
-                        $"/transcribe must report base for stored \"{stored}\", got \"{TranscribeEndpoints.ModelLabel(odd)}\"");
-                    Assert(ModesEndpoints.ToDto(odd).Model == "base",
-                        $"GET /modes must report base for stored \"{stored}\", got \"{ModesEndpoints.ToDto(odd).Model}\"");
-                }
-            });
-
-            Run("Local API Cloud mode with no cloudProvider (#1521): runs and shows as HyperWhisper Cloud", () =>
-            {
-                // The parse itself. Blank means HyperWhisper Cloud, as macOS
-                // reads a nil cloudProvider; a known id is unchanged; a non-blank
-                // unknown id is still None (a bad value, not an omitted one).
-                foreach (var blank in new string?[] { null, "", "   " })
-                {
-                    Assert(CloudTranscriptionProviderExtensions.FromModeCloudProvider(blank)
-                            == CloudTranscriptionProvider.HyperWhisperCloud,
-                        $"a blank cloudProvider ('{blank ?? "<null>"}') must read as HyperWhisper Cloud");
-                }
-                Assert(CloudTranscriptionProviderExtensions.FromModeCloudProvider("hyperwhisper")
-                        == CloudTranscriptionProvider.HyperWhisperCloud,
-                    "'hyperwhisper' must read as HyperWhisper Cloud");
-                Assert(CloudTranscriptionProviderExtensions.FromModeCloudProvider("openai")
-                        == CloudTranscriptionProvider.OpenAI,
-                    "a BYOK provider id must keep its own provider");
-                Assert(CloudTranscriptionProviderExtensions.FromModeCloudProvider("not-a-provider")
-                        == CloudTranscriptionProvider.None,
-                    "an unknown non-blank id must still read as None");
-                // The plain identifier parse is untouched: the editor's combo
-                // tags and the engine dispatch still rely on blank -> None.
-                Assert(CloudTranscriptionProviderExtensions.FromIdentifier(null) == CloudTranscriptionProvider.None,
-                    "FromIdentifier(null) must stay None");
-
-                // The mode POST /modes stores for the issue's body:
-                // {"model":"cloud", ...} with no cloudProvider.
-                var posted = new Mode
-                {
-                    Name = "S8 Cloud",
-                    ProviderType = "cloud",
-                    Model = "cloud",
-                    CloudProvider = null,
-                    CloudAccuracyTier = "elevenLabsScribeV2",
-                };
-                Assert(TranscriptionProviderFactory.IsHyperWhisperCloudActive(posted),
-                    "a Cloud mode with no cloudProvider must resolve to HyperWhisper Cloud");
-                var tierDefault = HyperWhisper.Services.AppClassification.CloudSttCatalog.Shared
-                    .DefaultModelIdForId("elevenLabsScribeV2");
-                Assert(TranscribeEndpoints.ModelLabel(posted) == tierDefault,
-                    $"/transcribe must report the tier's model for it, got \"{TranscribeEndpoints.ModelLabel(posted)}\"");
-                var subtitle = new ModeToSubtitleConverter()
-                    .Convert(posted, typeof(string), null!, CultureInfo.InvariantCulture) as string;
-                Assert(subtitle == CloudTranscriptionProvider.HyperWhisperCloud.GetDisplayName(),
-                    $"the mode subtitle must name HyperWhisper Cloud, got \"{subtitle}\"");
-                Assert(subtitle != CloudTranscriptionProvider.None.GetDisplayName(),
-                    "the mode subtitle must not read None");
-                // The wire value is unchanged: GET /modes still reports no
-                // cloudProvider for this mode, like macOS.
-                Assert(ModesEndpoints.ToDto(posted).CloudProvider is null,
-                    "GET /modes must keep reporting the stored (absent) cloudProvider");
-
-                // PATCH {"model":"cloud"} on a local mode leaves cloudProvider
-                // null too; it must run on HyperWhisper Cloud the same way.
-                var flipped = new Mode
-                {
-                    ProviderType = "local",
-                    LocalEngine = "whisper",
-                    ModelType = "base",
-                    Model = "base",
-                    CloudProvider = null,
-                    CloudAccuracyTier = "elevenLabsScribeV2",
-                };
-                ModesEndpoints.ApplyPatch(new ModePatchDto { Model = "cloud" }, flipped);
-                Assert(flipped.ProviderType == "cloud", $"PATCH model:cloud must make the mode cloud, got \"{flipped.ProviderType}\"");
-                Assert(TranscriptionProviderFactory.IsHyperWhisperCloudActive(flipped),
-                    "a mode PATCHed to Cloud with no cloudProvider must resolve to HyperWhisper Cloud");
-
-                // A LOCAL mode with no cloudProvider is not a HyperWhisper Cloud
-                // mode: the default applies to cloud modes only.
-                Assert(!TranscriptionProviderFactory.IsHyperWhisperCloudActive(new Mode
-                {
-                    ProviderType = "local",
-                    LocalEngine = "whisper",
-                    ModelType = "base",
-                    Model = "base",
-                    CloudProvider = null,
-                }), "a local mode must not read as HyperWhisper Cloud");
-
-                // An explicit BYOK provider is untouched.
-                Assert(!TranscriptionProviderFactory.IsHyperWhisperCloudActive(new Mode
-                {
-                    ProviderType = "cloud",
-                    Model = "cloud",
-                    CloudProvider = "openai",
-                }), "a BYOK cloud mode must not read as HyperWhisper Cloud");
             });
 
             Run("backup export (#1477): an On-device mode switched back to Cloud exports model cloud", () =>
@@ -16772,225 +15628,6 @@ internal static class Program
             var balancePreviousContext = SynchronizationContext.Current;
             SynchronizationContext.SetSynchronizationContext(null);
 
-            RunAsync("onboarding: the cloud credit balance is never cut without an ellipsis", async () =>
-            {
-                // Both cloud steps draw the credits readout with OnboardingBigNumberStyle
-                // (30 pt) in the `*` column of a two-column row whose `Auto` column
-                // holds a pill (Setup) or the "Get credits" button (Configure). The
-                // readout was bound to CreditsFormatted, whose sentence is wider than
-                // what is left of that row, and the style set no TextTrimming and no
-                // TextWrapping, so the text ran under the neighbour and was cut mid-word
-                // at the card edge: the Configure step rendered "$66.30 remainir" and the
-                // Setup step "$66.30 remaining (~10523 min", with nothing to say either
-                // had been cut. The caption directly below has always trimmed.
-                //
-                // #529 moved the readout to the COUNT, which fits, so this case now
-                // measures the count. It is still worth measuring: the count grows with
-                // the balance, and the trimming setter is what stops a big enough one
-                // from repeating the defect.
-                //
-                // The gateway's own numbers: FormattedBalance divides the credit count
-                // by 1000 to get the dollars (HyperWhisperCloudCredits.cs:112-119), so
-                // 66300 credits IS "$66.30 remaining".
-                var balance = "$66.30 remaining (~10523 minutes)";
-
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.AdvanceTo(OnboardingStep.Configure);
-                h.Flow.LicenseKeyInput = "HW-GOOD";
-                h.Credits.NextCredits = new OnboardingCloudCredits(66300, 10523, balance);
-
-                h.Flow.TestAccessKey();
-                await h.LastTask;
-                Assert(h.Flow.ShowsLicenseTestPassed, "precondition: the probe passed");
-                Assert(h.Flow.CreditsFormatted == balance, "precondition: the balance landed");
-
-                var readout = h.Flow.CreditsCountFormatted;
-                Assert(readout == 66300d.ToString("N0", CultureInfo.CurrentCulture),
-                    $"precondition: the count is what the readout draws, got '{readout}'");
-
-                AssertBalanceReadoutFits(OnboardingStep.Configure, h.Flow, readout);
-
-                // An ordinary count fits, so the assertion above no longer reaches the
-                // trimming half and would stay green with #524's setter deleted. This
-                // count does not fit: it is asserted to overflow, on the Configure step,
-                // whose column is the narrower of the two (~212 DIP behind the "Get
-                // credits" button, against ~412 on Setup). The setter is the only thing
-                // that keeps it inside.
-                h.Credits.Publish(new OnboardingCloudCredits(
-                    999_999_999_999_999d, 1, "$999,999,999,999.99 remaining (~1 minutes)"));
-
-                AssertBalanceReadoutFits(
-                    OnboardingStep.Configure, h.Flow, h.Flow.CreditsCountFormatted,
-                    mustOverflow: true);
-
-                h.Credits.Publish(new OnboardingCloudCredits(66300, 10523, balance));
-                Assert(h.Flow.CreditsCountFormatted == readout, "precondition: back to the real count");
-
-                h.Flow.ActivateCloudLicense();
-                await h.LastTask;
-                Assert(h.Flow.IsSelectedSourceUsable, "precondition: the licence activated");
-
-                AssertBalanceReadoutFits(OnboardingStep.Setup, h.Flow, readout);
-            });
-
-            RunAsync("onboarding: the cloud big number is the credit COUNT, not the balance sentence", async () =>
-            {
-                // #529. Both cloud steps print a caption that names a COUNT - "credits
-                // available" and "credits, spent per minute of audio" - under a 30 pt
-                // readout that was bound to the balance SENTENCE, so the panel read
-                // "$66.30 remaining (~10523 minutes)" / "credits available". macOS puts
-                // the count in the same slot from the same catalog keys
-                // (OnboardingSourceViews.swift:307-310 and 579-582), and Windows already
-                // had the count property and already used it at Done.
-                var balance = "$66.30 remaining (~10523 minutes)";
-                var count = 66300d.ToString("N0", CultureInfo.CurrentCulture);
-
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.AdvanceTo(OnboardingStep.Configure);
-                h.Flow.LicenseKeyInput = "HW-GOOD";
-                h.Credits.NextCredits = new OnboardingCloudCredits(66300, 10523, balance);
-
-                h.Flow.TestAccessKey();
-                await h.LastTask;
-                Assert(h.Flow.ShowsLicenseTestPassed, "precondition: the probe passed");
-
-                var configure = AssertBigNumberAboveCaption(
-                    OnboardingStep.Configure, h.Flow,
-                    "onboarding.configure.cloud.creditsCaption", count, balance);
-
-                // Dropped from the card, but not lost.
-                AssertBalanceIsTheTooltip(configure, balance);
-
-                h.Flow.ActivateCloudLicense();
-                await h.LastTask;
-                Assert(h.Flow.IsSelectedSourceUsable, "precondition: the licence activated");
-
-                var setup = AssertBigNumberAboveCaption(
-                    OnboardingStep.Setup, h.Flow,
-                    "onboarding.setup.cloud.credits.caption", count, balance);
-
-                AssertBalanceIsTheTooltip(setup, balance);
-            });
-
-            RunAsync("onboarding: an unknown credit count reads as unknown, never as a blank slot", async () =>
-            {
-                // The catch #529 names. CreditsCountFormatted used to fall back to an
-                // empty string because only the Done summary read it, and that summary
-                // is gated on HasCredits. Once the readout binds to it, an empty
-                // fallback turns a failed or pending fetch into a blank 30 pt line above
-                // "credits available" - worse than the ellipsis the sentence had, and
-                // invisible in QA because a blank line looks like nothing at all.
-                //
-                // Both steps, because neither row is gated on HasCredits: Configure is
-                // gated on the probe and Setup on the activation, and an activation whose
-                // credits refresh fails leaves Setup rendering with no balance. That is
-                // the state onboarding.setup.cloud.subtitle.balancePending exists for.
-                var h = new OnboardingHarness();
-                h.Credits.ThrowOnRefresh = true;
-                h.GrantMicrophone();
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.AdvanceTo(OnboardingStep.Configure);
-                h.Flow.LicenseKeyInput = "HW-GOOD";
-
-                h.Flow.TestAccessKey();
-                await h.LastTask;
-                Assert(h.Flow.ShowsLicenseTestPassed, "precondition: the probe passed");
-                Assert(!h.Flow.HasCredits, "precondition: the fetch failed, so nothing landed");
-
-                var configure = AssertBigNumberAboveCaption(
-                    OnboardingStep.Configure, h.Flow,
-                    "onboarding.configure.cloud.creditsCaption", "…", expectedAbsent: null);
-
-                // Hovering an ellipsis must not pop an ellipsis.
-                AssertBalanceIsTheTooltip(configure, null);
-
-                h.Flow.ActivateCloudLicense();
-                await h.LastTask;
-                Assert(h.Flow.IsSelectedSourceUsable, "precondition: the licence activated");
-                Assert(!h.Flow.HasCredits, "precondition: the balance still never arrived");
-
-                var setup = AssertBigNumberAboveCaption(
-                    OnboardingStep.Setup, h.Flow,
-                    "onboarding.setup.cloud.credits.caption", "…", expectedAbsent: null);
-
-                AssertBalanceIsTheTooltip(setup, null);
-            });
-
-            RunAsync("onboarding: the cloud setup step RENDERS the state it reports", async () =>
-            {
-                // #491, at the binding layer. The four view-model cases next to the flow
-                // seams prove the properties are right; they cannot prove SetupStepPage
-                // reads them. A typo in a binding path is silent in WPF - the row simply
-                // never ticks - so this lays the real page out in both states and reads
-                // what is on it.
-                var h = new OnboardingHarness();
-                h.GrantMicrophone();
-                h.AdvanceTo(OnboardingStep.Source);
-                h.Flow.SelectSource(OnboardingSourceKind.HyperWhisperCloud);
-                h.AdvanceTo(OnboardingStep.Configure);
-
-                h.Flow.LicenseKeyInput = "HW-GOOD";
-                h.Credits.NextCredits = new OnboardingCloudCredits(66300, 10523, "$66.30 remaining");
-                h.Flow.TestAccessKey();
-                await h.LastTask;
-                Assert(h.Flow.Advance(), "setup must be reachable");
-
-                // Arrival: verified, not yet activated.
-                var arrival = VisualTextOf(
-                    LayOutOnboardingStepPage(OnboardingStep.Setup, h.Flow, 760, 521));
-
-                Assert(
-                    arrival.Contains(
-                        HyperWhisper.Localization.Loc.S("onboarding.setup.cloud.subtitle.pending"),
-                        StringComparer.Ordinal),
-                    "the unactivated step must render the sentence that asks for the activation");
-                Assert(
-                    !arrival.Contains(
-                        HyperWhisper.Localization.Loc.S("onboarding.setup.cloud.subtitle"),
-                        StringComparer.Ordinal),
-                    "and must not render the one that says it already happened");
-
-                h.Flow.ActivateCloudLicense();
-                await h.LastTask;
-                Assert(h.Flow.Back() && h.Flow.Advance(), "a Back-and-forward must move both ways");
-
-                var afterBack = LayOutOnboardingStepPage(OnboardingStep.Setup, h.Flow, 760, 521);
-                var texts = VisualTextOf(afterBack);
-
-                Assert(
-                    texts.Contains(
-                        HyperWhisper.Localization.Loc.S("onboarding.setup.cloud.subtitle"),
-                        StringComparer.Ordinal),
-                    "an activated step with a balance renders the original sentence");
-
-                // The tick itself, not the row's label: the label is always there, and
-                // it was the GLYPH that disappeared after Back.
-                var keyVerifiedRow = DescendantsOf<System.Windows.Controls.TextBlock>(afterBack)
-                    .FirstOrDefault(t => string.Equals(
-                        t.Text,
-                        HyperWhisper.Localization.Loc.S("onboarding.setup.cloud.check.keyVerified"),
-                        StringComparison.Ordinal));
-
-                Assert(keyVerifiedRow is not null, "the Access key verified row is on the page");
-
-                var glyphs = DescendantsOf<System.Windows.Controls.TextBlock>(
-                        (DependencyObject)System.Windows.Media.VisualTreeHelper.GetParent(keyVerifiedRow!)!)
-                    .Where(t => t != keyVerifiedRow)
-                    .ToList();
-
-                Assert(
-                    glyphs.Count(t => t.Visibility == Visibility.Visible) == 1,
-                    "exactly one of the tick and the pending circle is ever shown");
-                Assert(
-                    glyphs.Any(t => t.Visibility == Visibility.Visible
-                                    && t.Style == afterBack.TryFindResource("OnboardingCheckGlyphStyle")),
-                    "and after a Back-and-forward on an activated device it has to be the TICK");
-            });
-
             RunAsync("onboarding: the BYOK setup step RENDERS the state it reports", async () =>
             {
                 // The same binding-path check for the twin row one branch over. There is
@@ -17714,98 +16351,6 @@ internal static class Program
                 Assert(ordinaryEditor.ModeNameLockedHint.Visibility == Visibility.Collapsed,
                     "an ordinary mode is told its name cannot be changed, which is untrue and is " +
                     "the mirror image of the reported bug");
-            });
-
-            Run("mode editor: leaving an English-only local model for a cloud source brings the Language row back", () =>
-            {
-                // #1641. AutoSelectEnglishForModel is the only code that shows or hides
-                // LanguagePanel. It ran on a local-model change and at load, but not on
-                // a SOURCE change, so a Parakeet v2 (or Whisper *.en) mode switched to
-                // HyperWhisper Cloud kept the row collapsed and saved Language = "en"
-                // with no control left to change it.
-                //
-                // The combos fill only in OnLoaded, which a console process never
-                // raises, so it is invoked directly. Nothing in it downloads or loads
-                // a model: LoadLocalModels lists the catalog and only checks whether
-                // each file exists, so this holds on a runner with no models.
-                EnsureSmokeApplication();
-
-                // Declared-only and by signature: a base class has an OnLoaded too.
-                var onLoaded = typeof(ModeEditorWindow).GetMethod(
-                    "OnLoaded", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly, null,
-                    new[] { typeof(object), typeof(RoutedEventArgs) }, null)
-                    ?? throw new InvalidOperationException(
-                        "ModeEditorWindow.OnLoaded is gone - this case can no longer fill the editor");
-
-                static string? SelectedLanguage(ModeEditorWindow editor)
-                    => (editor.LanguageCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Tag?.ToString();
-
-                ModeEditorWindow LoadedEditor(string engine, string modelId)
-                {
-                    var editor = new ModeEditorWindow(new Mode
-                    {
-                        Id = Guid.NewGuid(),
-                        Name = "S20 Lang",
-                        ProviderType = "local",
-                        LocalEngine = engine,
-                        LocalParakeetModel = engine == "parakeet" ? modelId : null,
-                        ModelType = engine == "whisper" ? modelId : "base",
-                        CloudProvider = "hyperwhisper",
-                        CloudAccuracyTier = "elevenLabsScribeV2",
-                        Language = "en"
-                    });
-                    onLoaded.Invoke(editor, new object[] { editor, new RoutedEventArgs() });
-
-                    // Precondition: the editor really is on the English-only model.
-                    // An ARM64 runner without the local engine converts the mode to
-                    // Cloud in ConfigureForArchitecture, and this case would then
-                    // pass without exercising the switch at all.
-                    Assert(editor.SourceOnDeviceSegment.IsChecked == true,
-                        $"{engine}:{modelId} did not load as an on-device mode, so the source switch " +
-                        "this case is about never happens");
-                    Assert(editor.LanguagePanel.Visibility == Visibility.Collapsed,
-                        $"{engine}:{modelId} is English-only but the Language row shows at load - the " +
-                        "state #1641 starts from is not reached");
-                    return editor;
-                }
-
-                foreach (var (engine, modelId) in new[] { ("parakeet", "parakeet-v2"), ("whisper", "base.en") })
-                {
-                    foreach (var target in new[] { "hwcloud", "yourprovider" })
-                    {
-                        var editor = LoadedEditor(engine, modelId);
-                        var segment = target == "hwcloud"
-                            ? editor.SourceHwCloudSegment
-                            : editor.SourceYourProviderSegment;
-                        segment.IsChecked = true;
-
-                        Assert(editor.SourceOnDeviceSegment.IsChecked != true,
-                            $"checking {target} left On-device checked - the switch did not happen");
-                        Assert(editor.LanguagePanel.Visibility == Visibility.Visible,
-                            $"{engine}:{modelId} -> {target}: the Language row stayed hidden, so the " +
-                            "cloud mode saves locked to English (#1641)");
-                        Assert(editor.LanguageCombo.IsEnabled,
-                            $"{engine}:{modelId} -> {target}: the Language row shows but is disabled");
-
-                        // The user can now pick another language on the cloud source.
-                        editor.LanguageCombo.SelectedItem = editor.LanguageCombo.Items
-                            .OfType<System.Windows.Controls.ComboBoxItem>()
-                            .FirstOrDefault(item => item.Tag?.ToString() == "ja")
-                            ?? throw new InvalidOperationException(
-                                $"{target}: the language list has no Japanese - this case's pick is stale");
-
-                        // And the reverse direction: back to the English-only model,
-                        // the row hides again and English is forced, as on a model change.
-                        editor.SourceOnDeviceSegment.IsChecked = true;
-                        Assert(editor.LanguagePanel.Visibility == Visibility.Collapsed
-                               && !editor.LanguageCombo.IsEnabled,
-                            $"{target} -> {engine}:{modelId}: the Language row is still offered on an " +
-                            "English-only local model");
-                        Assert(SelectedLanguage(editor) == "en",
-                            $"{target} -> {engine}:{modelId}: language is '{SelectedLanguage(editor)}', not " +
-                            "the English an English-only model can transcribe");
-                    }
-                }
             });
 
             Run("modes: exactly one default, and its name is fixed", () =>
@@ -18626,215 +17171,6 @@ internal static class Program
                     "a horizontal StackPanel measures its children with infinite width, so "
                     + "TextWrapping=\"Wrap\" never fires inside one and the text is clipped at the "
                     + "column edge. Use a two-column Grid. " + string.Join("; ", problems));
-            });
-
-            Run("l10n: no translated label is cut off on Home, the nav rail or the settings pages — issue #570", () =>
-            {
-                // #570. Two controls were sized in PIXELS for the English string: each
-                // Home statistics tile was a hard-coded Width="132", and the nav rail is
-                // the 232px SidebarWidth. Both fitted English and nothing else - German
-                // "Durchschnittliche Geschwindigkeit" wanted 166px of a 132px tile, and
-                // French "Bibliothèque de modèles" 158px of the rail's 137px label
-                // column. Before #552 these controls held raw English in 36 of the 39
-                // catalogues, which is the only reason the numbers ever looked adequate.
-                //
-                // MEASURED, not grepped, and measured under EVERY catalogue the app
-                // ships. A case pinned to one language would be worthless here: the
-                // defect only appears once some particular translation is long enough,
-                // so German passing says nothing about Hungarian. The rule this asserts
-                // is the one the issue asks for - the LAYOUT gives way, never the
-                // translation.
-                DatabaseInitializer.InitializeAsync().GetAwaiter().GetResult();
-                EnsureSmokeApplication();
-
-                // The real budgets, not round numbers. MainWindow is a fixed,
-                // non-resizable 1000x680 (MinWidth == MaxWidth == 1000).
-                const double ContentWidth = 1000 - 232;            // less SidebarWidth
-                const double FormWidth = ContentWidth - 200;       // less the settings nav column
-                const double CardWidth = ContentWidth - 48;        // less PagePadding. The card's own
-                                                                   // Padding is INSIDE HomeStatsBar,
-                                                                   // whose root element is that Border.
-                const double PageHeight = 680 - 44;                // less the title row
-
-                // The API keys page is the one screen here that is NOT in the settings
-                // frame: ModelsSettingsPage.OpenApiKeyManager opens it in a Window of
-                // its own, 760 wide. Measuring it at the settings width would invent a
-                // clipping that no user can see, so the chrome and the scroll bar come
-                // off the system metrics rather than off a guess.
-                var apiKeysWidth = 760
-                    - (SystemParameters.ResizeFrameVerticalBorderWidth * 2)
-                    - SystemParameters.VerticalScrollBarWidth;
-
-                // 300px panel less its 16,8 padding is 268; the filter's 12px margin and
-                // its 168px MaxWidth leave exactly this much for the search field, and
-                // only in the handful of locales whose "This week" is that long.
-                const double MinimumSearchFieldWidth = 96;
-
-                var cultures = ShippedUiCultures();
-                Assert(cultures.Count >= 39,
-                    $"only {cultures.Count} catalogues were found next to the test binary, so this case is "
-                    + "not covering the locales it claims to");
-
-                var originalCulture = System.Threading.Thread.CurrentThread.CurrentUICulture;
-                var problems = new List<string>();
-
-                try
-                {
-                    foreach (var culture in cultures)
-                    {
-                        System.Threading.Thread.CurrentThread.CurrentUICulture =
-                            culture == BaseCatalogue ? CultureInfo.InvariantCulture : new CultureInfo(culture);
-
-                        // The two controls the issue names...
-                        CheckLabelsFit(culture, "HomeStatsBar",
-                            new HomeStatsBar { DataContext = new HomeStatsProbe() }, CardWidth, 140, problems);
-                        CheckLabelsFit(culture, "SidebarNav", new SidebarNav(), 232, PageHeight, problems);
-
-                        // The rail's answer to a long label is a second LINE, so the other
-                        // direction has to be checked too: nothing may be pushed off the
-                        // bottom of a window that cannot be resized. It needs its OWN
-                        // instance measured with an UNBOUNDED height - DesiredSize is
-                        // clamped to whatever it was measured against, so asking the
-                        // instance above could never report more than it was given. The
-                        // budget is the whole 680, because MainWindow gives the rail
-                        // Grid.Row="0" with RowSpan="3".
-                        var tallRail = new SidebarNav();
-                        System.Windows.Documents.TextElement.SetFontFamily(tallRail, AppUiFontFamily());
-                        tallRail.Measure(new Size(232, double.PositiveInfinity));
-                        if (tallRail.DesiredSize.Height > 680 + 0.5)
-                        {
-                            problems.Add(
-                                $"[{culture}] SidebarNav wants {tallRail.DesiredSize.Height:F0}px of a "
-                                + "680px window, so its lowest item is off the screen");
-                        }
-
-                        // ...and every other screen the sweep for #570 found a cut label
-                        // on. HistoryPage is here for its Width="90" date filter, and
-                        // ApiKeys because its intro sentence is cut in ENGLISH by 20px.
-                        CheckLabelsFit(culture, "HomePage",
-                            new HyperWhisper.Views.Pages.HomePage(), ContentWidth, PageHeight, problems);
-                        CheckLabelsFit(culture, "SettingsPage",
-                            new HyperWhisper.Views.Pages.SettingsPage(), ContentWidth, PageHeight, problems);
-                        // The date filter sizes to its SELECTED option and only that
-                        // option is in the visual tree, so one layout covers one quarter of
-                        // the control. Every option is laid out, and each one has to leave
-                        // the search field beside it a usable width - the filter is bounded
-                        // by MaxWidth precisely so that it can.
-                        var history = new HyperWhisper.Views.Pages.HistoryPage();
-                        for (var option = 0; option < history.DateFilterBox.Items.Count; option++)
-                        {
-                            history.DateFilterBox.SelectedIndex = option;
-                            CheckLabelsFit(
-                                culture, $"HistoryPage (filter option {option})",
-                                history, ContentWidth, PageHeight, problems);
-
-                            if (history.SearchFieldBorder.ActualWidth < MinimumSearchFieldWidth)
-                            {
-                                problems.Add(
-                                    $"[{culture}] HistoryPage: date-filter option {option} leaves the search "
-                                    + $"field {history.SearchFieldBorder.ActualWidth:F0}px, under the "
-                                    + $"{MinimumSearchFieldWidth:F0}px floor");
-                            }
-                        }
-                        CheckLabelsFit(culture, "ShortcutsSettingsPage",
-                            new ShortcutsSettingsPage(), FormWidth, PageHeight, problems);
-                        CheckLabelsFit(culture, "ApiKeysSettingsPage",
-                            new ApiKeysSettingsPage(), apiKeysWidth, 760, problems);
-                        CheckLabelsFit(culture, "StreamingSettingsPage",
-                            new StreamingSettingsPage(), ContentWidth, PageHeight, problems);
-
-                        // The rest of the screens the sweep covered. They are clean today,
-                        // and they are listed so that they STAY clean: every one of them
-                        // carries the same shape of secondary caption that had to be fixed
-                        // on the API keys page. Named rather than reflected over, because
-                        // several pages in Views/Pages cannot be constructed headlessly at
-                        // all - BackupExportSettingsPage opens the vocabulary table, and
-                        // MainWindow builds the audio stack - and a reflection sweep that
-                        // swallowed those failures would quietly cover nothing. The eight
-                        // Onboarding step pages are deliberately out: they only hold their
-                        // real strings once a flow has been driven, which is what
-                        // BuildOnboardingStepPages already exists for.
-                        CheckLabelsFit(culture, "ModesPage",
-                            new HyperWhisper.Views.Pages.ModesPage(), ContentWidth, PageHeight, problems);
-                        CheckLabelsFit(culture, "VocabularyPage",
-                            new HyperWhisper.Views.Pages.VocabularyPage(), ContentWidth, PageHeight, problems);
-                        CheckLabelsFit(culture, "ModelsSettingsPage",
-                            new ModelsSettingsPage(), ContentWidth, PageHeight, problems);
-                        // #1471: the isolated-profile note under Launch at startup is
-                        // collapsed until the page loads on an isolated profile, and a
-                        // collapsed block is never laid out. Show it so it is measured.
-                        var generalPage = new GeneralSettingsPage();
-                        generalPage.LaunchAtStartupIsolatedNote.Visibility = Visibility.Visible;
-                        CheckLabelsFit(culture, "GeneralSettingsPage",
-                            generalPage, FormWidth, PageHeight, problems);
-                        CheckLabelsFit(culture, "SoundSettingsPage",
-                            new SoundSettingsPage(), FormWidth, PageHeight, problems);
-                        CheckLabelsFit(culture, "CloudAccountSettingsPage",
-                            new CloudAccountSettingsPage(), FormWidth, PageHeight, problems);
-                        CheckLabelsFit(culture, "OutputSettingsPage",
-                            new OutputSettingsPage(), FormWidth, PageHeight, problems);
-                        CheckLabelsFit(culture, "LocalApiSettingsPage",
-                            new LocalApiSettingsPage(), FormWidth, PageHeight, problems);
-                        CheckLabelsFit(culture, "AppearanceSettingsPage",
-                            new AppearanceSettingsPage(), FormWidth, PageHeight, problems);
-                        CheckLabelsFit(culture, "AboutSettingsPage",
-                            new AboutSettingsPage(), FormWidth, PageHeight, problems);
-                    }
-
-                    // Reported BEFORE the guards below, so that a run against the old
-                    // markup prints every label it found cut rather than stopping at the
-                    // first self-check.
-                    Assert(problems.Count == 0,
-                        "a control sized in pixels for the English string cuts every longer language, and the "
-                        + "fix belongs in the layout, never in the translation. "
-                        + string.Join("; ", problems));
-
-                    // PROVE THE CASE STILL EXERCISES THE DEFECT. Everything above passes
-                    // trivially if the strings shrink or the catalogues stop loading, so
-                    // the two originals are re-measured by name and must (a) still be too
-                    // long for the box they used to be given and (b) actually be on two
-                    // lines now. Without this the whole case could go green while the
-                    // fixed widths came back.
-                    System.Threading.Thread.CurrentThread.CurrentUICulture = new CultureInfo("de");
-                    var germanBar = new HomeStatsBar { DataContext = new HomeStatsProbe() };
-                    System.Windows.Documents.TextElement.SetFontFamily(germanBar, AppUiFontFamily());
-                    germanBar.Measure(new Size(CardWidth, 140));
-                    germanBar.Arrange(new Rect(0, 0, CardWidth, 140));
-                    germanBar.UpdateLayout();
-
-                    var germanCaption = DescendantsOf<System.Windows.Controls.TextBlock>(germanBar)
-                        .FirstOrDefault(block => block.Text == HyperWhisper.Localization.Loc.S("home.stats.averageSpeed"));
-                    Assert(germanCaption != null,
-                        "no Home tile renders home.stats.averageSpeed any more, so this case cannot check it");
-                    Assert(UnconstrainedWidthOf(germanCaption!) > 132,
-                        $"the German Home caption now wants {UnconstrainedWidthOf(germanCaption!):F0}px, which the "
-                        + "old Width=\"132\" tile fitted, so this case no longer exercises #570");
-                    Assert(germanCaption!.ActualHeight > LineHeightOf(germanCaption!) * 1.5,
-                        $"the German Home caption is still one {germanCaption!.ActualHeight:F0}px line, so it is "
-                        + "being cut rather than wrapped");
-
-                    System.Threading.Thread.CurrentThread.CurrentUICulture = new CultureInfo("fr");
-                    var frenchRail = new SidebarNav();
-                    System.Windows.Documents.TextElement.SetFontFamily(frenchRail, AppUiFontFamily());
-                    frenchRail.Measure(new Size(232, PageHeight));
-                    frenchRail.Arrange(new Rect(0, 0, 232, PageHeight));
-                    frenchRail.UpdateLayout();
-
-                    var frenchItem = DescendantsOf<System.Windows.Controls.TextBlock>(frenchRail)
-                        .FirstOrDefault(block => block.Text == HyperWhisper.Localization.Loc.S("settings.nav.models"));
-                    Assert(frenchItem != null,
-                        "no nav item renders settings.nav.models any more, so this case cannot check it");
-                    Assert(UnconstrainedWidthOf(frenchItem!) > frenchItem!.ActualWidth + 0.5,
-                        $"the French Model Library label wants {UnconstrainedWidthOf(frenchItem!):F0}px and was given "
-                        + $"{frenchItem!.ActualWidth:F0}px, so it fits on one line and this case proves nothing");
-                    Assert(frenchItem!.ActualHeight > LineHeightOf(frenchItem!) * 1.5,
-                        $"the French Model Library label is still one {frenchItem!.ActualHeight:F0}px line in a "
-                        + $"{frenchItem!.ActualWidth:F0}px column, so it is being cut rather than wrapped");
-                }
-                finally
-                {
-                    System.Threading.Thread.CurrentThread.CurrentUICulture = originalCulture;
-                }
             });
 
             Run("startup: an isolated profile never reads, writes or deletes the shared HKCU Run value — issue #1471", () =>

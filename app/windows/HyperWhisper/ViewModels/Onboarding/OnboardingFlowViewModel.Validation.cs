@@ -42,12 +42,6 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
     /// </summary>
     private ValidationScope? CurrentValidationScope => SelectedSource switch
     {
-        OnboardingSourceKind.HyperWhisperCloud => new ValidationScope(
-            OnboardingSourceKind.HyperWhisperCloud,
-            // The licence is not a per-provider credential; pin the provider field
-            // so a provider change can never invalidate a licence pass.
-            CloudTranscriptionProvider.OpenAI,
-            LicenseKeyInput.Trim()),
 
         OnboardingSourceKind.YourProvider => new ValidationScope(
             OnboardingSourceKind.YourProvider,
@@ -105,11 +99,11 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
     /// </summary>
     private void CancelCredentialValidation()
     {
-        _taskBox.Cancel(OnboardingTaskKeys.LicenseTest);
+
         _taskBox.Cancel(OnboardingTaskKeys.ProviderTest);
-        _taskBox.Cancel(OnboardingTaskKeys.Activation);
+
         IsTestingKey = false;
-        IsActivatingLicense = false;
+
     }
 
     private bool _isTestingKey;
@@ -120,114 +114,12 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
         private set => SetProperty(ref _isTestingKey, value);
     }
 
-    private bool? _licenseTestPassed;
-
-    public bool? LicenseTestPassed
-    {
-        get => _licenseTestPassed;
-        private set => SetProperty(ref _licenseTestPassed, value);
-    }
-
     private ProviderHealth? _providerTestHealth;
 
     public ProviderHealth? ProviderTestHealth
     {
         get => _providerTestHealth;
         private set => SetProperty(ref _providerTestHealth, value);
-    }
-
-    /// <summary>Read-only licence check. Account state is untouched until activation.</summary>
-    [RelayCommand]
-    public void TestAccessKey()
-    {
-        if (!_isLive)
-            return;
-
-        var key = LicenseKeyInput.Trim();
-        if (key.Length == 0)
-            return;
-
-        // What this check is ABOUT, captured before the await. Everything the
-        // continuation writes is guarded on this still describing the screen.
-        var scope = new ValidationScope(
-            OnboardingSourceKind.HyperWhisperCloud, CloudTranscriptionProvider.OpenAI, key);
-
-        IsTestingKey = true;
-        LicenseTestPassed = null;
-        _activationErrorMessage = null;
-        RunTracked(OnboardingTaskKeys.LicenseTest, ct => TestAccessKeyCoreAsync(scope, key, ct));
-    }
-
-    private async Task TestAccessKeyCoreAsync(
-        ValidationScope scope,
-        string key,
-        CancellationToken cancellationToken)
-    {
-        OnboardingLicenseOutcome outcome;
-        try
-        {
-            outcome = await _license.ProbeAsync(key, cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-        catch (Exception ex)
-        {
-            // Anything the gateway lets escape - an HttpRequestException, a JSON
-            // fault - has to leave the step usable. The spinner is cleared on the
-            // same terms as a landed result, so the button can be pressed again.
-            if (cancellationToken.IsCancellationRequested || !_isLive || CurrentValidationScope != scope)
-                return;
-
-            LicenseTestPassed = false;
-            _activationErrorMessage = ex.Message;
-            RecordValidationOutcome(scope, false);
-            IsTestingKey = false;
-            RefreshSetupError();
-            _taskBox.Clear(OnboardingTaskKeys.LicenseTest);
-            return;
-        }
-
-        if (cancellationToken.IsCancellationRequested || !_isLive)
-            return;
-
-        // Drop a result that no longer describes what is on screen: the licence text
-        // was edited, OR the user switched to another source. The second half is the
-        // one that used to be missing, and it let this result open the BYOK gate.
-        if (CurrentValidationScope != scope)
-        {
-            IsTestingKey = false;
-            _taskBox.Clear(OnboardingTaskKeys.LicenseTest);
-            return;
-        }
-
-        LicenseTestPassed = outcome.IsValid;
-        _activationErrorMessage = outcome.IsValid ? null : outcome.ErrorMessage;
-        RecordValidationOutcome(scope, outcome.IsValid);
-
-        if (outcome.IsValid)
-        {
-            _lastValidatedLicenseKey = key;
-        }
-        else if (_lastValidatedLicenseKey == key)
-        {
-            // A revoked key that fails a re-probe must not stay remembered.
-            _lastValidatedLicenseKey = null;
-        }
-
-        IsTestingKey = false;
-        RefreshSetupError();
-        _taskBox.Clear(OnboardingTaskKeys.LicenseTest);
-
-        // StepDidChange fetches the balance on ENTRY to this step, which on a first-run machine
-        // happens while the app is still unlicensed, so that fetch asks about the device id and
-        // comes back "Invalid license key". Nothing re-fetched after the probe, so the big number
-        // above "credits available" stayed on its "…" placeholder for good on a perfectly valid
-        // key. The probe does not STORE the key -- only activation does -- so the key is passed
-        // explicitly; without it this fetch would ask about the device id again and fail again.
-        if (outcome.IsValid)
-            RefreshCredits(force: true, licenseKeyOverride: key);
     }
 
     /// <summary>

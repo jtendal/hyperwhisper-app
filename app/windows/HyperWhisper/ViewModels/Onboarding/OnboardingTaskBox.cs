@@ -100,11 +100,11 @@ internal sealed class OnboardingTaskBox
 /// </summary>
 internal static class OnboardingTaskKeys
 {
-    public const string LicenseTest = "license.test";
+
     public const string ProviderTest = "provider.test";
-    public const string Activation = "license.activate";
+
     public const string MicrophonePermission = "permission.microphone";
-    public const string CreditsRefresh = "credits.refresh";
+
     public const string SampleClip = "tryIt.sample";
 
     /// <summary>

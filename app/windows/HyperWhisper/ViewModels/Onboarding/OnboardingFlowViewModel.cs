@@ -47,8 +47,7 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
 
     private readonly IOnboardingPermissions _permissions;
     private readonly IOnboardingModelCatalog _catalog;
-    private readonly IOnboardingLicenseGateway _license;
-    private readonly IOnboardingCreditsGateway _credits;
+
     private readonly IOnboardingProviderKeyGateway _providerKeys;
     private readonly IOnboardingAudioGateway _audio;
     private readonly IOnboardingSourceCommitter _committer;
@@ -61,7 +60,7 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
     private readonly OnboardingTaskBox _taskBox = new();
 
     private OnboardingDownloadErrors _downloadErrors = OnboardingDownloadErrors.None;
-    private string? _activationErrorMessage;
+
     private string? _providerErrorMessage;
 
     /// <summary>
@@ -112,13 +111,6 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
     private readonly Dictionary<CloudTranscriptionProvider, string> _validatedProviderKeys = new();
 
     /// <summary>
-    /// The exact trimmed key whose licence probe last passed this session. Editing
-    /// the field closes the gate through the string mismatch; retyping the validated
-    /// key reopens it, mirroring the BYOK stored-key semantics.
-    /// </summary>
-    private string? _lastValidatedLicenseKey;
-
-    /// <summary>
     /// Bug 1, microphone step. SelectDevice writes the app's input-device setting
     /// immediately, so the values it replaces are captured on the first change. null
     /// is a real value here ("follow the system default"), hence the separate flag.
@@ -140,8 +132,6 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
     public OnboardingFlowViewModel(
         IOnboardingPermissions permissions,
         IOnboardingModelCatalog catalog,
-        IOnboardingLicenseGateway license,
-        IOnboardingCreditsGateway credits,
         IOnboardingProviderKeyGateway providerKeys,
         IOnboardingAudioGateway audio,
         IOnboardingSourceCommitter committer,
@@ -149,8 +139,7 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
     {
         _permissions = permissions;
         _catalog = catalog;
-        _license = license;
-        _credits = credits;
+
         _providerKeys = providerKeys;
         _audio = audio;
         _committer = committer;
@@ -161,7 +150,7 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
         _catalog.DownloadErrorsChanged += OnDownloadErrorsChanged;
         _catalog.DownloadActivity += OnDownloadActivity;
         _permissions.ShortcutChanged += OnShortcutChanged;
-        _credits.CreditsChanged += OnCreditsChanged;
+
         _audio.DevicesChanged += OnDevicesChanged;
         _audio.IsRecordingChanged += OnIsRecordingChanged;
         _audio.TranscriptChanged += OnTranscriptChanged;
@@ -170,7 +159,7 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
 
         DeviceAvailability = _audio.Availability;
         ApplyShortcutState();
-        ApplyCredits();
+
         RefreshPermissions();
     }
 
@@ -187,7 +176,7 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
         _catalog.DownloadErrorsChanged -= OnDownloadErrorsChanged;
         _catalog.DownloadActivity -= OnDownloadActivity;
         _permissions.ShortcutChanged -= OnShortcutChanged;
-        _credits.CreditsChanged -= OnCreditsChanged;
+
         _audio.DevicesChanged -= OnDevicesChanged;
         _audio.IsRecordingChanged -= OnIsRecordingChanged;
         _audio.TranscriptChanged -= OnTranscriptChanged;
@@ -249,48 +238,12 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
                 case OnboardingSourceKind.OnDevice:
                     return SelectedModel is not null;
 
-                case OnboardingSourceKind.HyperWhisperCloud:
-                    return CloudKeyIsVerified;
-
                 case OnboardingSourceKind.YourProvider:
                     return ProviderKeyIsVerified;
 
                 default:
                     return false;
             }
-        }
-    }
-
-    /// <summary>
-    /// Has this Cloud access key been shown to work — a working key, not merely a
-    /// typed one. Either the licence is already active on this PC, the inline test
-    /// passed, or the field still holds the exact key that passed earlier this
-    /// session.
-    ///
-    /// <see cref="KeyValidated"/> is SCOPED (see ValidationScope) and is cleared on
-    /// every entry to the Configure step by <see cref="ResetConfigureTestResults"/>,
-    /// so on its own it says "an inline test is passing RIGHT NOW", not "this key has
-    /// verified". The per-session <see cref="_lastValidatedLicenseKey"/> is what
-    /// survives Back navigation, and an active licence is proof on its own: the server
-    /// accepted this key on this device.
-    ///
-    /// The Configure gate has always read exactly this. The "Access key verified" row
-    /// on the Setup step read the bare <see cref="KeyValidated"/> instead, so a single
-    /// Back-and-forward unticked it while the two rows below — activation and credits —
-    /// stayed ticked, and the card claimed the key was unverified on a device whose
-    /// account that same key had already activated.
-    /// </summary>
-    public bool CloudKeyIsVerified
-    {
-        get
-        {
-            if (SelectedSource != OnboardingSourceKind.HyperWhisperCloud)
-                return false;
-
-            var key = LicenseKeyInput.Trim();
-            return _license.IsActive
-                || KeyValidated
-                || (key.Length > 0 && key == _lastValidatedLicenseKey);
         }
     }
 
@@ -332,7 +285,6 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
                     SelectedModel is not null && _catalog.IsInstalled(SelectedModel),
 
                 // Activation, not a passing probe.
-                OnboardingSourceKind.HyperWhisperCloud => _license.IsActive,
 
                 // Stored AND verified this session, for the key that is in the field
                 // NOW: an unprobed pre-existing key must not read as "validated" on
@@ -483,18 +435,6 @@ public sealed partial class OnboardingFlowViewModel : ViewModelBase
             case OnboardingStep.Permissions:
                 RefreshPermissions();
                 RefreshShortcutRegistration();
-                break;
-
-            case OnboardingStep.Configure:
-                ResetConfigureTestResults();
-                if (SelectedSource == OnboardingSourceKind.HyperWhisperCloud)
-                    RefreshCredits(force: false);
-                break;
-
-            case OnboardingStep.Setup:
-                RefreshSetupError();
-                if (SelectedSource == OnboardingSourceKind.HyperWhisperCloud)
-                    RefreshCredits(force: false);
                 break;
 
             case OnboardingStep.Microphone:

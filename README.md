@@ -1,8 +1,8 @@
 # HyperWhisper for Windows
 
 A Windows-only fork of [HyperWhisper](https://github.com/ray-amjad/hyperwhisper-app).
-Global hotkey dictation with local Whisper / Parakeet models, optional cloud
-transcription, post-processing, modes, vocabulary, and backup/restore.
+Global hotkey dictation with local Whisper / Parakeet models, optional third-party
+API transcription using your own keys, post-processing, modes, vocabulary, and backup/restore.
 
 ## Requirements
 
@@ -72,12 +72,18 @@ server deployment workflows and unrelated tooling have been removed.
 Backup compatibility data remains so existing backups can still be imported.
 No submodule initialization or Node package installation is required.
 
-Local transcription requires no cloud account. Optional hosted Cloud and
-account features still use the upstream services and their normal credentials;
-this fork does not bypass their server-side entitlement checks. The retained
-update feed is historical test data, not an update service for this fork.
-The app still uses the upstream update service; configure your own feed and
-verification key before distributing a separately maintained build.
+Local transcription requires no cloud account. HyperWhisper Cloud account
+activation, credits, purchase screens, transcription/post-processing relay,
+background account validation and connection warmup have been removed.
+New installations start with local transcription and post-processing off.
+Other providers and custom endpoints still work with your own API keys.
+Existing hosted-mode settings remain readable for backup compatibility, but
+attempts to run those providers are rejected before audio is uploaded. Edit an
+old hosted mode to select a local model or a supported provider.
+
+The retained update feed is historical test data. The app still uses the upstream
+update service; configure your own feed and verification key before distributing
+a separately maintained build.
 
 ## License and attribution
 

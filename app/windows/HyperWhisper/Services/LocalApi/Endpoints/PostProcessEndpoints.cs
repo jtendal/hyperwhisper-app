@@ -415,6 +415,9 @@ internal static class PostProcessEndpoints
             }
         }
 
+        if (!CustomPostProcessingEndpoint.IsCustomProviderString(mode.PostProcessingProvider ?? "")
+            && PostProcessingProviderExtensions.FromString(mode.PostProcessingProvider) is PostProcessingProvider.None or PostProcessingProvider.HyperWhisperCloud)
+            throw new ApiInputException("invalid_provider", "Supply a local model or your own supported API provider.");
         // After applying overrides, the request implied post-processing is
         // wanted — guarantee PostProcessingMode reflects that.
         if (mode.PostProcessingMode == 0)
@@ -451,12 +454,10 @@ internal static class PostProcessEndpoints
             ProfanityFilter = false,
             CustomInstructions = "",
             PostProcessingMode = 1,
-            PostProcessingProvider = "hyperwhispercloud",
+            PostProcessingProvider = null,
             ProviderType = "cloud",
             // Defaults mirror the GUI/default-mode recommendation
             // (ModeDefaults.cs): ElevenLabs Scribe v2 + Anthropic Claude Haiku 5.5.
-            CloudAccuracyTier = "elevenLabsScribeV2",
-            CloudPostProcessingModel = "anthropic:claude-haiku-5-5",
             SortOrder = int.MaxValue,
             CreatedDate = DateTime.UtcNow,
             ModifiedDate = DateTime.UtcNow

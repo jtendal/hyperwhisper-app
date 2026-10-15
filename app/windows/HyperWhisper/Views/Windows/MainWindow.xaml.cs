@@ -66,7 +66,6 @@ public partial class MainWindow : Window
 
         // The nav rail is its own control now (issue #570); it reports the credits
         // call to action rather than navigating, because navigation lives here.
-        Sidebar.CloudCreditsRequested += CloudCreditsSidebar_Click;
 
         // No back UI, so the journal would only keep every visited page alive (issue #977).
         FrameJournal.KeepNoBackStack(ContentFrame);
@@ -166,7 +165,6 @@ public partial class MainWindow : Window
         });
 
         InitializeSystemTray();
-        LicenseManager.Instance.LicenseStatusChanged += OnLicenseStatusChanged;
 
         // SINGLE-INSTANCE: Listen for broadcast from a second instance trying to launch
         SourceInitialized += (s, e) =>
@@ -183,38 +181,6 @@ public partial class MainWindow : Window
 
         // STARTUP BEHAVIOR
         // If LaunchMinimized is enabled, hide the window after initialization
-        Loaded += async (s, e) =>
-        {
-            await _viewModel.OnNavigatedToAsync();
-            NavigateToPage(_viewModel.CurrentPage);
-            UpdateSidebarLicenseState();
-            ThemeService.Instance.ThemeChanged += OnThemeChanged;
-            ApplyMacStyleWindowBackdrop();
-
-            // FIRST RUN ONBOARDING
-            // Resolved here, and deliberately in this position:
-            //   * AFTER OnNavigatedToAsync, because that is what populates
-            //     AudioDevices and registers the global hotkeys. The Microphone
-            //     step reads the first and the Permissions step's shortcut row
-            //     reads the second, and KeyboardShortcutService needs this window
-            //     to own an HWND or the row reports Unknown forever.
-            //   * BEFORE the LaunchMinimized hide, mirroring the macOS ordering
-            //     comment at hyperwhisperApp.swift:845-847. Hiding first would
-            //     leave a first run user with LaunchMinimized on staring at an
-            //     ownerless modal over an empty desktop.
-            if (App.ShouldShowOnboarding)
-            {
-                ShowOnboarding();
-            }
-
-            // Hide window if LaunchMinimized is enabled
-            if (SettingsService.Instance.LaunchMinimized && !App.ShouldShowOnboarding)
-            {
-                Hide();
-                _notifyIcon?.ShowBalloonTip(2000, "HyperWhisper", $"Running in background. Press {_viewModel.HotkeyText} to record.", System.Windows.Forms.ToolTipIcon.Info);
-                LoggingService.Info("MainWindow: Started minimized to system tray");
-            }
-        };
 
         // FOREGROUND KEEPALIVE
         // Run a periodic /warmup ping while the app is the active window so
@@ -223,8 +189,6 @@ public partial class MainWindow : Window
         // background traffic. Note: WPF's Deactivated also fires when an
         // in-app sub-window (e.g., Settings) takes focus — acceptable, the
         // ticker just resumes on the next Activated.
-        Activated += (s, e) => _viewModel.StartCloudKeepalive();
-        Deactivated += (s, e) => _viewModel.StopCloudKeepalive();
 
         // WINDOW CLOSING BEHAVIOR
         // Respects MinimizeToTray setting:
@@ -266,7 +230,7 @@ public partial class MainWindow : Window
             _fileProgressWindow?.Close();
             _modeToast?.Close();
             _notifyIcon?.Dispose();
-            LicenseManager.Instance.LicenseStatusChanged -= OnLicenseStatusChanged;
+
             ThemeService.Instance.ThemeChanged -= OnThemeChanged;
         }
         catch (Exception ex)
@@ -349,22 +313,6 @@ public partial class MainWindow : Window
         };
         if (p is HomePage) p.DataContext = _viewModel;
         ContentFrame.Navigate(p);
-    }
-
-    private void OnLicenseStatusChanged(object? sender, EventArgs e)
-        => Dispatcher.Invoke(UpdateSidebarLicenseState);
-
-    private void UpdateSidebarLicenseState()
-    {
-        var isLicensed = LicenseManager.Instance.LicenseStatus == LicenseStatus.Active;
-        Sidebar.LicensedSidebarCard.Visibility = isLicensed ? Visibility.Visible : Visibility.Collapsed;
-        Sidebar.CloudSidebarActions.Visibility = isLicensed ? Visibility.Collapsed : Visibility.Visible;
-    }
-
-    private void CloudCreditsSidebar_Click(object? sender, EventArgs e)
-    {
-        // Open the combined Cloud account / credits + license activation panel.
-        NavigateToSettingsSection("License");
     }
 
     // One navigation, not two: the CurrentPage change carries the section (#637).

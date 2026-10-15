@@ -134,81 +134,10 @@
             <StackPanel Grid.Row="2" Margin="10,0,10,10">
                 <Separator Background="{DynamicResource BorderBrush}" Opacity="0.5" Margin="10,8"/>
 
-                <Border x:Name="LicensedSidebarCard"
-                        Background="{DynamicResource CardBackgroundBrush}"
-                        BorderBrush="{DynamicResource BorderBrush}"
-                        BorderThickness="1"
-                        CornerRadius="{StaticResource SidebarGroupCornerRadius}"
-                        Padding="14,8"
-                        Visibility="Collapsed">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="&#xE73E;"
-                                   FontFamily="Segoe MDL2 Assets"
-                                   FontSize="13"
-                                   Foreground="{DynamicResource SuccessBrush}"
-                                   VerticalAlignment="Center"
-                                   Margin="0,0,8,0"/>
-                        <TextBlock Grid.Column="1"
-                                   Text="{loc:Loc app.title}"
-                                   FontSize="12"
-                                   FontWeight="Medium"
-                                   Foreground="{DynamicResource TextPrimaryBrush}"
-                                   VerticalAlignment="Center"
-                                   TextTrimming="CharacterEllipsis"/>
-                        <Border Grid.Column="2"
-                                Background="{DynamicResource HoverBackgroundBrush}"
-                                BorderBrush="{DynamicResource BorderBrush}"
-                                BorderThickness="1"
-                                CornerRadius="{StaticResource ButtonCornerRadius}"
-                                Padding="6,2"
-                                Margin="8,0,0,0">
-                            <TextBlock Text="{loc:Loc app.badge.pro}"
-                                       FontSize="10"
-                                       FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
-                        </Border>
-                    </Grid>
-                </Border>
-
                 <!-- Cloud credits CTA (for users without an active Cloud license).
                      Local transcription is free & unlimited (open source); this is a
                      discoverable path to HyperWhisper Cloud (paid, credit-based). -->
-                <StackPanel x:Name="CloudSidebarActions">
-                    <Button Click="CloudCreditsSidebar_Click"
-                            Style="{StaticResource PrimaryButtonStyle}"
-                            Padding="14,8"
-                            HorizontalContentAlignment="Stretch">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="&#xE753;"
-                                       FontFamily="Segoe MDL2 Assets"
-                                       FontSize="11"
-                                       VerticalAlignment="Center"
-                                       Margin="0,0,8,0"/>
-                            <TextBlock Grid.Column="1"
-                                       Text="{loc:Loc app.cloud.cta.title}"
-                                       FontSize="12"
-                                       FontWeight="Medium"
-                                       VerticalAlignment="Center"
-                                       TextTrimming="CharacterEllipsis"/>
-                            <TextBlock Grid.Column="2"
-                                       Text="&#xE76C;"
-                                       FontFamily="Segoe MDL2 Assets"
-                                       FontSize="10"
-                                       VerticalAlignment="Center"
-                                       Margin="8,0,0,0"/>
-                        </Grid>
-                    </Button>
-                </StackPanel>
+
             </StackPanel>
         </Grid>
     </Border>

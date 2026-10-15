@@ -55,7 +55,7 @@ public sealed class ModelLibraryManager
 
     private IEnumerable<LibraryModel> BuildCloudTranscriptionRows()
     {
-        foreach (var model in CloudTranscriptionModels.All.Where(m => m.IsAvailable))
+        foreach (var model in CloudTranscriptionModels.All.Where(m => m.IsAvailable && m.Provider.IsAvailable()))
         {
             var providerKey = SharedModelsCatalog.CatalogKey(model.Provider);
             var lang = SharedModelsCatalog.GetLanguageSupport(providerKey, CatalogKind.Voice, model.Id);
@@ -164,7 +164,7 @@ public sealed class ModelLibraryManager
 
     private IEnumerable<LibraryModel> BuildPostProcessingRows()
     {
-        foreach (var model in LanguageModelInfo.AvailableModels.Where(m => m.Provider != PostProcessingProvider.LocalLlm))
+        foreach (var model in LanguageModelInfo.AvailableModels.Where(m => m.Provider != PostProcessingProvider.LocalLlm && m.Provider != PostProcessingProvider.HyperWhisperCloud))
         {
             var providerKey = SharedModelsCatalog.CatalogKey(model.Provider);
             yield return new LibraryModel

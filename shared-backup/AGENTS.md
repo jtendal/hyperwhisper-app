@@ -1,4 +1,8 @@
-# Cross-Platform Backup Schema
+# Backup compatibility schema
+
+The Windows-only fork seeds new modes with local transcription and post-processing
+disabled. Existing cloud-related fields remain in schema version 2 for lossless
+imports and exports; they do not enable HyperWhisper Cloud in this fork.
 
 This folder defines the universal backup format for HyperWhisper. macOS and Windows use this schema as the live contract for cross-platform backup compatibility; the Linux port uses the same contract and is represented by a checked-in fixture while its platform importer is implemented.
 

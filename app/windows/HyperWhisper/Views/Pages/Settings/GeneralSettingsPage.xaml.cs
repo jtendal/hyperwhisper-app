@@ -77,11 +77,6 @@ public partial class GeneralSettingsPage : Page
         ErrorLoggingCheckbox.Unchecked += ErrorLoggingCheckbox_Unchecked;
 
         // Load anonymous speed data state from settings
-        ShareSpeedDataCheckbox.Checked -= ShareSpeedDataCheckbox_Checked;
-        ShareSpeedDataCheckbox.Unchecked -= ShareSpeedDataCheckbox_Unchecked;
-        ShareSpeedDataCheckbox.IsChecked = SettingsService.Instance.ShareAnonymousSpeedData;
-        ShareSpeedDataCheckbox.Checked += ShareSpeedDataCheckbox_Checked;
-        ShareSpeedDataCheckbox.Unchecked += ShareSpeedDataCheckbox_Unchecked;
 
         // Load auto-update state from settings
         AutoUpdateCheckbox.Checked -= AutoUpdateCheckbox_Checked;
@@ -227,18 +222,6 @@ public partial class GeneralSettingsPage : Page
     // The setting is read once per transcription, where the cloud services build
     // their core TranscribeParams, so a change applies to the very next
     // transcription — nothing to start or stop here.
-
-    private void ShareSpeedDataCheckbox_Checked(object sender, RoutedEventArgs e)
-    {
-        SettingsService.Instance.ShareAnonymousSpeedData = true;
-        LoggingService.Info("GeneralSettingsPage: Enabled anonymous speed data sharing");
-    }
-
-    private void ShareSpeedDataCheckbox_Unchecked(object sender, RoutedEventArgs e)
-    {
-        SettingsService.Instance.ShareAnonymousSpeedData = false;
-        LoggingService.Info("GeneralSettingsPage: Disabled anonymous speed data sharing");
-    }
 
     // =========================================================================
     // AUTO-UPDATE

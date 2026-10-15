@@ -142,8 +142,6 @@ public sealed partial class OnboardingFlowViewModel
     // converter with a string parameter.
     // =========================================================================
 
-    public bool IsCloudSelected => SelectedSource == OnboardingSourceKind.HyperWhisperCloud;
-
     public bool IsOnDeviceSelected => SelectedSource == OnboardingSourceKind.OnDevice;
 
     public bool IsProviderSelected => SelectedSource == OnboardingSourceKind.YourProvider;
@@ -158,15 +156,7 @@ public sealed partial class OnboardingFlowViewModel
     {
         get
         {
-            var rows = new List<OnboardingSourceRow>(3)
-            {
-                new(
-                    OnboardingSourceKind.HyperWhisperCloud,
-                    "\uE753",
-                    Loc.S("onboarding.source.cloud.title"),
-                    Loc.S("onboarding.source.cloud.description"),
-                    IsCloudSelected)
-            };
+            var rows = new List<OnboardingSourceRow>(2);
 
             // The on-device branch is offered only where a local engine actually
             // runs. The catalog is already filtered by PlatformHelper, so an empty
@@ -225,20 +215,7 @@ public sealed partial class OnboardingFlowViewModel
         OnboardingStep.Welcome => Loc.S("onboarding.footer.reassurance.welcome"),
         OnboardingStep.Permissions => Loc.S("onboarding.footer.reassurance.permissions"),
         OnboardingStep.Source => Loc.S("onboarding.footer.reassurance.source"),
-        OnboardingStep.Configure => SelectedSource switch
-        {
-            OnboardingSourceKind.HyperWhisperCloud => Loc.S("onboarding.footer.reassurance.configure.cloud"),
-            OnboardingSourceKind.OnDevice => Loc.S("onboarding.footer.reassurance.configure.onDevice"),
-            OnboardingSourceKind.YourProvider => Loc.S("onboarding.footer.reassurance.configure.provider"),
-            _ => Loc.S("onboarding.footer.reassurance.pickSource")
-        },
-        OnboardingStep.Setup => SelectedSource switch
-        {
-            OnboardingSourceKind.HyperWhisperCloud => Loc.S("onboarding.footer.reassurance.setup.cloud"),
-            OnboardingSourceKind.OnDevice => Loc.S("onboarding.footer.reassurance.setup.onDevice"),
-            OnboardingSourceKind.YourProvider => Loc.S("onboarding.footer.reassurance.setup.provider"),
-            _ => Loc.S("onboarding.footer.reassurance.pickSource")
-        },
+
         OnboardingStep.Microphone => Loc.S("onboarding.footer.reassurance.microphone"),
         OnboardingStep.TryIt => Loc.S("onboarding.footer.reassurance.tryIt"),
         _ => Loc.S("onboarding.footer.reassurance.done")
@@ -335,23 +312,9 @@ public sealed partial class OnboardingFlowViewModel
 
     public string SelectedProviderDisplayName => SelectedProvider.GetDisplayName();
 
-    private string TrimmedLicenseKey => LicenseKeyInput.Trim();
-
     private string TrimmedApiKey => ApiKeyInput.Trim();
 
-    /// <summary>Testing is refused on an empty field, exactly as macOS disables the button.</summary>
-    public bool CanTestAccessKey => !IsTestingKey && TrimmedLicenseKey.Length > 0;
-
     public bool CanTestProviderKey => !IsTestingKey && TrimmedApiKey.Length > 0;
-
-    public bool ShowsLicenseTestPassed => !IsTestingKey && LicenseTestPassed == true;
-
-    /// <summary>
-    /// The inline failure line under the Cloud key field. Deliberately keyed on the
-    /// test having actually failed, not merely on a message existing, so an error
-    /// from the Setup step cannot leak backwards onto Configure.
-    /// </summary>
-    public bool ShowsLicenseTestFailed => !IsTestingKey && LicenseTestPassed == false && HasSetupError;
 
     public bool ShowsProviderTestHealthy => !IsTestingKey && ProviderTestHealth == ProviderHealth.Healthy;
 
@@ -387,54 +350,11 @@ public sealed partial class OnboardingFlowViewModel
     // SETUP STEP
     // =========================================================================
 
-    public bool CanActivateLicense => !IsActivatingLicense && TrimmedLicenseKey.Length > 0;
-
     /// <summary>
     /// "Save API key" now probes before it writes, so it shares IsTestingKey with
     /// "Test API key" and must be disabled while a check is running.
     /// </summary>
     public bool CanSaveProviderKey => !IsTestingKey && TrimmedApiKey.Length > 0;
-
-    /// <summary>
-    /// macOS ticks "credits confirmed" only once the licence is genuinely active AND
-    /// a balance has arrived (OnboardingSourceViews.swift:557-560). A pending fetch
-    /// leaves the line untocked and blocks nothing.
-    /// </summary>
-    public bool AreCreditsConfirmed => IsSelectedSourceUsable && HasCredits;
-
-    /// <summary>
-    /// The Cloud setup step's subtitle, which has to describe the state the step is
-    /// actually in.
-    ///
-    /// It used to be the static "Key verified, credits confirmed." — printed on
-    /// arrival, directly above a checklist showing both of those rows EMPTY, an
-    /// "Activate Cloud" button and a disabled Continue. The step's whole job is the
-    /// activation the subtitle was already claiming had happened.
-    ///
-    /// It reads the SAME two flags the checklist rows below it read, in the same
-    /// order, so the sentence cannot contradict the ticks:
-    ///
-    /// <list type="bullet">
-    /// <item>not activated — the ask, matching the "Activate Cloud" button on show;</item>
-    /// <item>activated, balance not in — states the activation and claims nothing
-    /// about credits. The fetch is display-only and swallows its failures by design
-    /// (RefreshCreditsCoreAsync), and it is asynchronous even when it succeeds, so
-    /// "credits confirmed" is not true the moment the licence goes active;</item>
-    /// <item>activated with a balance — the original sentence, now true.</item>
-    /// </list>
-    /// </summary>
-    public string SetupCloudSubtitle
-    {
-        get
-        {
-            if (!IsSelectedSourceUsable)
-                return Loc.S("onboarding.setup.cloud.subtitle.pending");
-
-            return Loc.S(AreCreditsConfirmed
-                ? "onboarding.setup.cloud.subtitle"
-                : "onboarding.setup.cloud.subtitle.balancePending");
-        }
-    }
 
     public string SelectedModelDisplayName => SelectedModel?.DisplayName ?? string.Empty;
 
@@ -460,14 +380,6 @@ public sealed partial class OnboardingFlowViewModel
     /// <summary>Neither installed nor downloading: the state that offers the button.</summary>
     public bool ShowsDownloadButton =>
         HasSelectedModel && !IsSelectedModelInstalled && !IsSelectedModelDownloading;
-
-    /// <summary>
-    /// The three setup error lines. Each frames the manager's hard-coded English in
-    /// localized copy, exactly as macOS does, and each reads the SAME single
-    /// SetupErrorMessage funnel; nothing here consults a second error channel.
-    /// </summary>
-    public string SetupCloudErrorText =>
-        HasSetupError ? Loc.S("onboarding.setup.cloud.error", SetupErrorMessage!) : string.Empty;
 
     public string SetupOnDeviceErrorText =>
         HasSetupError ? Loc.S("onboarding.setup.onDevice.error", SetupErrorMessage!) : string.Empty;
@@ -715,11 +627,6 @@ public sealed partial class OnboardingFlowViewModel
             Loc.S("onboarding.done.summary.onDevice",
                 SelectedModel?.DisplayName ?? Loc.S("onboarding.source.onDevice.title")),
 
-        OnboardingSourceKind.HyperWhisperCloud =>
-            HasCredits
-                ? Loc.S("onboarding.done.summary.cloud", Loc.S("onboarding.source.cloud.title"), CreditsCountFormatted)
-                : Loc.S("onboarding.source.cloud.title"),
-
         OnboardingSourceKind.YourProvider =>
             Loc.S("onboarding.done.summary.provider", SelectedProviderDisplayName),
 
@@ -753,7 +660,7 @@ public sealed partial class OnboardingFlowViewModel
             },
             [nameof(SelectedSource)] = new[]
             {
-                nameof(IsCloudSelected), nameof(IsOnDeviceSelected), nameof(IsProviderSelected),
+                 nameof(IsOnDeviceSelected), nameof(IsProviderSelected),
                 nameof(HasNoSourceSelected), nameof(FooterReassurance), nameof(SourceSummary),
                 nameof(SourceOptions)
             },
@@ -779,22 +686,17 @@ public sealed partial class OnboardingFlowViewModel
                 nameof(SelectedModelSizeText), nameof(DownloadButtonText), nameof(HasSelectedModel),
                 nameof(ShowsDownloadButton), nameof(SourceSummary)
             },
-            [nameof(LicenseKeyInput)] = new[] { nameof(CanTestAccessKey), nameof(CanActivateLicense) },
             [nameof(ApiKeyInput)] = new[]
             {
                 nameof(CanTestProviderKey), nameof(CanSaveProviderKey), nameof(MaskedApiKey)
             },
             [nameof(IsTestingKey)] = new[]
             {
-                nameof(CanTestAccessKey), nameof(CanTestProviderKey), nameof(CanSaveProviderKey),
-                nameof(ShowsLicenseTestPassed),
-                nameof(ShowsLicenseTestFailed), nameof(ShowsProviderTestHealthy),
+                 nameof(CanTestProviderKey), nameof(CanSaveProviderKey),
+
+                 nameof(ShowsProviderTestHealthy),
                 nameof(ShowsProviderTestUnauthorized), nameof(ShowsProviderTestUnreachable),
                 nameof(ShowsProviderTestUnverified), nameof(ShowsProviderTestError)
-            },
-            [nameof(LicenseTestPassed)] = new[]
-            {
-                nameof(ShowsLicenseTestPassed), nameof(ShowsLicenseTestFailed)
             },
             [nameof(ProviderTestHealth)] = new[]
             {
@@ -802,15 +704,10 @@ public sealed partial class OnboardingFlowViewModel
                 nameof(ShowsProviderTestUnreachable), nameof(ShowsProviderTestUnverified),
                 nameof(ShowsProviderTestError)
             },
-            [nameof(IsActivatingLicense)] = new[] { nameof(CanActivateLicense) },
             [nameof(SetupErrorMessage)] = new[]
             {
-                nameof(SetupCloudErrorText), nameof(SetupOnDeviceErrorText), nameof(SetupProviderErrorText),
-                nameof(ShowsLicenseTestFailed), nameof(ShowsProviderTestError)
-            },
-            [nameof(IsSelectedSourceUsable)] = new[]
-            {
-                nameof(AreCreditsConfirmed), nameof(SetupCloudSubtitle)
+                 nameof(SetupOnDeviceErrorText), nameof(SetupProviderErrorText),
+                 nameof(ShowsProviderTestError)
             },
             [nameof(IsSelectedModelInstalled)] = new[]
             {
@@ -822,12 +719,6 @@ public sealed partial class OnboardingFlowViewModel
                 nameof(SelectedModelProgressPercent), nameof(SelectedModelProgressPercentText),
                 nameof(DownloadingPillText)
             },
-            [nameof(HasCredits)] = new[]
-            {
-                nameof(AreCreditsConfirmed), nameof(SetupCloudSubtitle), nameof(SourceSummary)
-            },
-            [nameof(CreditsFormatted)] = new[] { nameof(SourceSummary) },
-            [nameof(CreditsCountFormatted)] = new[] { nameof(SourceSummary) },
             [nameof(DeviceOptions)] = new[] { nameof(DeviceRows) },
             [nameof(SelectedDeviceId)] = new[] { nameof(DeviceRows) },
             [nameof(DeviceAvailability)] = new[]

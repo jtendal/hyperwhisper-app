@@ -137,14 +137,6 @@ public sealed record OnboardingDownloadErrors(string? Whisper, string? Parakeet)
     };
 }
 
-/// <summary>Result of a licence probe or activation, reduced to what the flow needs.</summary>
-public sealed record OnboardingLicenseOutcome(bool IsValid, string? ErrorMessage)
-{
-    public static OnboardingLicenseOutcome Failure(string? message) => new(false, message);
-
-    public static OnboardingLicenseOutcome Success() => new(true, null);
-}
-
 /// <summary>
 /// One curated on-device model offered during onboarding. Deliberately spans BOTH
 /// local engines behind one identity, because <see cref="Id"/> is written verbatim
@@ -194,15 +186,6 @@ public sealed record OnboardingShortcutState(
     public static readonly OnboardingShortcutState Unknown =
         new(string.Empty, OnboardingShortcutStatus.Unknown, null);
 }
-
-/// <summary>
-/// The HyperWhisper Cloud balance, flattened to exactly what the two cloud panels
-/// display so the flow never holds a live service object.
-/// </summary>
-public sealed record OnboardingCloudCredits(
-    double CreditsRemaining,
-    int MinutesRemaining,
-    string FormattedBalance);
 
 /// <summary>
 /// Opaque marker for whatever the committer needs in order to put production state
@@ -317,40 +300,6 @@ public interface IOnboardingModelCatalog
     /// binding layer that the setup step's progress bar has moved.
     /// </summary>
     event EventHandler? DownloadActivity;
-}
-
-/// <summary>
-/// HyperWhisper Cloud. <see cref="ProbeAsync"/> is read-only;
-/// <see cref="ActivateAsync"/> is the single explicit action that writes account
-/// state. Entitlement itself stays server side.
-/// </summary>
-public interface IOnboardingLicenseGateway
-{
-    bool IsActive { get; }
-
-    Task<OnboardingLicenseOutcome> ProbeAsync(string key, CancellationToken cancellationToken);
-
-    Task<OnboardingLicenseOutcome> ActivateAsync(string key, CancellationToken cancellationToken);
-}
-
-/// <summary>
-/// The cloud credit balance. Display only: it never gates Continue and a failed
-/// fetch never becomes a setup error.
-/// </summary>
-public interface IOnboardingCreditsGateway
-{
-    /// <summary>The last known balance, or null when it has never been read.</summary>
-    OnboardingCloudCredits? Credits { get; }
-
-    bool IsFetching { get; }
-
-    /// <param name="licenseKeyOverride">
-    /// A key verified this session but not yet stored, so the balance for the key the user just
-    /// typed can be read before activation. Null uses whatever identifier the app already holds.
-    /// </param>
-    Task RefreshAsync(bool force, CancellationToken cancellationToken, string? licenseKeyOverride = null);
-
-    event EventHandler? CreditsChanged;
 }
 
 /// <summary>Bring-your-own-key providers.</summary>

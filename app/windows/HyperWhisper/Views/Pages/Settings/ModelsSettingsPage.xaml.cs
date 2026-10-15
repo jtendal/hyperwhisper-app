@@ -31,7 +31,7 @@ public partial class ModelsSettingsPage : Page
     private string _typeFilter = "All types";
     private string _locationFilter = "Cloud & Offline";
     private bool _vocabFilterEnabled;
-    private bool _cloudAvailableFilterEnabled;
+
     private string _languageFilter = LibraryLanguageFilter.AnyCode;
 
     public ObservableCollection<LibraryModelViewModel> LibraryRows { get; } = new();
@@ -238,7 +238,7 @@ public partial class ModelsSettingsPage : Page
     private void FeatureFilter_Changed(object sender, RoutedEventArgs e)
     {
         _vocabFilterEnabled = VocabFilterMenuItem.IsChecked;
-        _cloudAvailableFilterEnabled = CloudAvailableFilterMenuItem.IsChecked;
+
         UpdateFilterChips();
         ApplyFilters();
     }
@@ -265,14 +265,6 @@ public partial class ModelsSettingsPage : Page
     {
         _vocabFilterEnabled = false;
         VocabFilterMenuItem.IsChecked = false;
-        UpdateFilterChips();
-        ApplyFilters();
-    }
-
-    private void CloudAvailableFilterChip_Clear(object sender, RoutedEventArgs e)
-    {
-        _cloudAvailableFilterEnabled = false;
-        CloudAvailableFilterMenuItem.IsChecked = false;
         UpdateFilterChips();
         ApplyFilters();
     }
@@ -332,9 +324,8 @@ public partial class ModelsSettingsPage : Page
         if (locationChip != null) LocationFilterChipText.Text = locationChip;
 
         VocabFilterChip.Visibility = _vocabFilterEnabled ? Visibility.Visible : Visibility.Collapsed;
-        CloudAvailableFilterChip.Visibility = _cloudAvailableFilterEnabled ? Visibility.Visible : Visibility.Collapsed;
 
-        var anyChip = typeChip != null || locationChip != null || _vocabFilterEnabled || _cloudAvailableFilterEnabled;
+        var anyChip = typeChip != null || locationChip != null || _vocabFilterEnabled;
         ActiveFilterChipsPanel.Visibility = anyChip ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -353,7 +344,6 @@ public partial class ModelsSettingsPage : Page
             && MatchesType(row.Model, type)
             && MatchesLocation(row.Model, location)
             && (!_vocabFilterEnabled || row.Model.SupportsCustomVocabulary)
-            && (!_cloudAvailableFilterEnabled || row.Model.AvailableViaHyperWhisperCloud)
             && MatchesLanguage(row.Model, _languageFilter));
 
         var rows = ApplySort(filtered).ToList();
@@ -394,8 +384,7 @@ public partial class ModelsSettingsPage : Page
             && MatchesProvider(r.Model, _providerFilter)
             && MatchesType(r.Model, _typeFilter)
             && MatchesLocation(r.Model, _locationFilter)
-            && (!_vocabFilterEnabled || r.Model.SupportsCustomVocabulary)
-            && (!_cloudAvailableFilterEnabled || r.Model.AvailableViaHyperWhisperCloud))
+            && (!_vocabFilterEnabled || r.Model.SupportsCustomVocabulary))
             .ToList();
         var supported = voice.Count(r => r.Model.SupportsLanguage(_languageFilter));
         var name = LibraryLanguageFilter.DisplayName(_languageFilter);
@@ -446,11 +435,6 @@ public partial class ModelsSettingsPage : Page
         if (_vocabFilterEnabled)
         {
             yield return Loc.S("settings.models.feature.vocabulary");
-        }
-
-        if (_cloudAvailableFilterEnabled)
-        {
-            yield return Loc.S("provider.hyperwhisper");
         }
 
         if (!string.IsNullOrEmpty(_languageFilter))
@@ -509,7 +493,6 @@ public partial class ModelsSettingsPage : Page
         _typeFilter = "All types";
         _locationFilter = "Cloud & Offline";
         _vocabFilterEnabled = false;
-        _cloudAvailableFilterEnabled = false;
 
         ProviderFilterLabel.Text = "All providers";
         foreach (var mi in ProviderMenu.Items.OfType<MenuItem>())
@@ -522,7 +505,6 @@ public partial class ModelsSettingsPage : Page
         LocationCloudMenuItem.IsChecked = false;
         LocationOfflineMenuItem.IsChecked = false;
         VocabFilterMenuItem.IsChecked = false;
-        CloudAvailableFilterMenuItem.IsChecked = false;
 
         // Reset the language filter too (SetLanguageFilter persists + re-applies).
         SetLanguageFilter(LibraryLanguageFilter.AnyCode);
